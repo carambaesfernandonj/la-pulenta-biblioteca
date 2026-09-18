@@ -1,0 +1,57 @@
+:root{
+  --bg:#f3f0e9; --panel:#fffdf8; --ink:#26221c; --muted:#777067;
+  --line:#d9d3c8; --accent:#5f604d; --accent-soft:#e9eadf;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+button,input{font:inherit}
+button{cursor:pointer}
+.topbar{max-width:1100px;margin:auto;padding:28px 20px 20px;display:flex;align-items:center;gap:18px}
+.topbar>div{flex:1}
+h1{margin:0;font-size:28px}
+.topbar p{margin:4px 0 0;color:var(--muted)}
+main{max-width:1100px;margin:auto;padding:0 20px 60px}
+.primary,.secondary,.icon-btn{border:1px solid var(--line);border-radius:12px;padding:11px 15px;background:var(--panel);color:var(--ink)}
+.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+.secondary:hover,.icon-btn:hover{background:#eee9df}
+.hero{display:grid;grid-template-columns:1fr 170px;gap:24px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:24px;margin-bottom:20px}
+.eyebrow{font-size:11px;letter-spacing:.16em;color:var(--muted)}
+.hero h2{margin:7px 0 6px;font-size:30px}
+.hero p{margin:0 0 16px;color:var(--muted)}
+.big-cover{aspect-ratio:3/4;border-radius:12px;background:linear-gradient(145deg,#494940,#1f201d);box-shadow:0 14px 28px #0002;display:grid;place-items:center;padding:15px;color:#fff;font-weight:700;text-align:center}
+.toolbar{display:flex;gap:12px;align-items:center;margin:0 0 18px}
+.search{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 12px;display:flex;gap:9px;align-items:center;flex:1;max-width:700px}
+.search input{border:0;outline:0;background:transparent;width:100%;min-width:0}
+.stats{font-size:13px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px}
+.book{border:0;background:transparent;text-align:left;padding:0}
+.cover{aspect-ratio:3/4;border-radius:12px;border:1px solid var(--line);background:var(--panel);box-shadow:0 7px 18px #0002;position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;padding:13px;transition:transform .12s}
+.book:hover .cover{transform:translateY(-3px)}
+.cover .type{font-size:10px;letter-spacing:.08em;color:var(--muted)}
+.cover .cover-title{font-weight:800;line-height:1.08;font-size:17px}
+.cover .source{font-size:10px;color:var(--muted)}
+.book-title{font-weight:600;font-size:14px;margin:8px 2px 2px}
+.book-meta{font-size:11px;color:var(--muted);margin:0 2px}
+.progress{height:4px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:8px}
+.progress span{display:block;height:100%;background:var(--accent)}
+.empty{border:1px dashed var(--line);border-radius:20px;padding:55px 20px;text-align:center;background:#faf8f2}
+.empty-icon{font-size:46px}.empty h2{margin:8px 0}.empty p{color:var(--muted);max-width:520px;margin:0 auto 18px}
+.reader{position:fixed;inset:0;background:#191815;z-index:10;display:flex;flex-direction:column;color:#f5f1e9}
+.reader-head{padding:12px 16px;display:flex;justify-content:space-between;gap:12px;align-items:center;background:#24231f;border-bottom:1px solid #444}
+.reader-head strong{display:block}.reader-head span{display:block;font-size:12px;color:#bbb4a9;margin-top:2px}
+.reader-actions{display:flex;gap:8px}.reader-actions .secondary{background:#2e2c27;border-color:#555;color:#eee}
+.icon-btn{background:#2e2c27;border-color:#555;color:#eee}
+.reader-body{flex:1;display:grid;place-items:center;min-height:0}
+.reader-body iframe,.reader-body embed{width:100%;height:100%;border:0;background:#fff}
+.epub-reader{width:min(1000px,94%);height:min(780px,86%);background:#f7f1e5;color:#29251f}
+.hidden{display:none !important}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 14px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:30}
+.toast.show{opacity:1}
+@media(max-width:650px){
+ .topbar{align-items:flex-start;flex-direction:column}
+ .topbar .primary{width:100%}
+ .hero{grid-template-columns:1fr 110px}.hero h2{font-size:23px}
+ .toolbar{align-items:stretch;flex-direction:column}
+ .reader-head{align-items:flex-start;flex-direction:column}
+ .reader-actions{width:100%}.reader-actions>*{flex:1}
+}

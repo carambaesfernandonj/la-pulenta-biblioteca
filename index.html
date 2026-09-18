@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#171717">
+  <title>Biblioteca · Lector</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>📚 Mi Biblioteca</h1>
+      <p>Tu estantería digital.</p>
+    </div>
+    <button id="addBtn" class="primary">＋ Añadir libro</button>
+    <input id="fileInput" type="file" accept=".pdf,.epub,application/pdf,application/epub+zip" multiple hidden>
+  </header>
+
+  <main>
+    <section id="continueSection" class="hero hidden">
+      <div>
+        <span class="eyebrow">CONTINUAR LEYENDO</span>
+        <h2 id="continueTitle">—</h2>
+        <p id="continueMeta">—</p>
+        <button id="continueBtn" class="secondary">Abrir donde quedé →</button>
+      </div>
+      <div id="continueCover" class="big-cover"></div>
+    </section>
+
+    <section class="toolbar">
+      <label class="search">
+        <span>🔎</span>
+        <input id="searchInput" type="search" placeholder="Buscar por título o nombre de archivo">
+      </label>
+      <div class="stats" id="stats">0 libros</div>
+    </section>
+
+    <section>
+      <div id="emptyState" class="empty">
+        <div class="empty-icon">📖</div>
+        <h2>Tu biblioteca está vacía</h2>
+        <p>Añade tu primer PDF o EPUB y quedará guardado aquí para la próxima vez.</p>
+        <button id="emptyAddBtn" class="primary">＋ Añadir mi primer libro</button>
+      </div>
+
+      <div id="libraryGrid" class="grid"></div>
+    </section>
+  </main>
+
+  <div id="reader" class="reader hidden" aria-modal="true" role="dialog">
+    <div class="reader-head">
+      <div>
+        <strong id="readerTitle">—</strong>
+        <span id="readerInfo">—</span>
+      </div>
+      <div class="reader-actions">
+        <button id="saveProgressBtn" class="secondary">Guardar posición</button>
+        <button id="closeReaderBtn" class="icon-btn" title="Cerrar">✕</button>
+      </div>
+    </div>
+    <div id="readerBody" class="reader-body"></div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
