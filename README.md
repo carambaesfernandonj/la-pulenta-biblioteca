@@ -1,4 +1,4 @@
-# Biblioteca / Lector — v0.1
+# Biblioteca / Lector — v0.2
 
 Esta es la primera versión del proyecto.
 
@@ -38,3 +38,13 @@ v0.4 — PWA + modo offline
 v0.5 — Supabase: cuentas y biblioteca multiusuario
 v0.6 — Google Drive
 v0.7 — Sincronización entre dispositivos
+
+
+## v0.2
+
+- Añadir varios PDF/EPUB.
+- Añadir una carpeta completa desde navegadores compatibles.
+- Indicador visual de carga con progreso, contador y archivo actual.
+- Los nombres de carpetas de una importación pueden convertirse en tags sugeridos.
+- Filtro básico por tags.
+- El sistema sigue usando IndexedDB para conservar los archivos en el navegador.
