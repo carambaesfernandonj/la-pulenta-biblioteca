@@ -15,7 +15,7 @@
       <p>Tu estantería digital.</p>
     </div>
     <div class="add-wrap">
-      <button id="addBtn" class="primary">＋ Añadir</button>
+      <button id="addBtn" class="primary" type="button">＋ Añadir</button>
       <div id="addMenu" class="add-menu hidden">
         <button id="addFilesBtn" type="button">📄 Archivos PDF / EPUB</button>
         <button id="addFolderBtn" type="button">📁 Carpeta completa</button>
@@ -42,11 +42,11 @@
         <input id="searchInput" type="search" placeholder="Buscar por título o nombre de archivo">
       </label>
       <div class="stats" id="stats">0 libros</div>
-      <button id="showAllTags" class="secondary tag-toggle" type="button">🏷️ Tags</button>
+      <button id="showTagsBtn" class="secondary tag-toggle" type="button">🏷️ Tags</button>
     </section>
 
     <section>
-      <div id="tagBar" class="tag-bar hidden"></div>
+      <div id="tagBar" class="tag-bar hidden" aria-label="Filtros por tags"></div>
       <div id="emptyState" class="empty">
         <div class="empty-icon">📖</div>
         <h2>Tu biblioteca está vacía</h2>
@@ -72,13 +72,15 @@
     <div id="readerBody" class="reader-body"></div>
   </div>
 
-  <div id="loadingPanel" class="loading-panel hidden" role="status" aria-live="polite">
+  <div id="loadingPanel" class="loading-panel hidden" role="dialog" aria-modal="true" aria-labelledby="loadingTitle">
     <div class="loading-card">
       <div class="loading-icon">📚</div>
-      <div class="loading-title" id="loadingTitle">Añadiendo libros…</div>
-      <div class="loading-detail" id="loadingDetail">Preparando archivos</div>
-      <div class="loading-track"><span id="loadingBar"></span></div>
+      <div id="loadingTitle" class="loading-title">Añadiendo libros…</div>
+      <div id="loadingDetail" class="loading-detail">Preparando archivos</div>
+      <div class="loading-track" aria-hidden="true"><span id="loadingBar"></span></div>
       <div class="loading-numbers"><span id="loadingCount">0 / 0</span><span id="loadingPercent">0%</span></div>
+      <div id="loadingDone" class="loading-done hidden">✓ Todos los archivos fueron procesados</div>
+      <div id="loadingHint" class="loading-hint">No cierres esta ventana hasta que termine.</div>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

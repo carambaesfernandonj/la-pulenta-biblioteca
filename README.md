@@ -1,4 +1,4 @@
-# Biblioteca / Lector — v0.2
+# Biblioteca / Lector — v0.2.1
 
 Esta es la primera versión del proyecto.
 
@@ -40,11 +40,13 @@ v0.6 — Google Drive
 v0.7 — Sincronización entre dispositivos
 
 
-## v0.2
+## v0.2.1
 
-- Añadir varios PDF/EPUB.
-- Añadir una carpeta completa desde navegadores compatibles.
-- Indicador visual de carga con progreso, contador y archivo actual.
-- Los nombres de carpetas de una importación pueden convertirse en tags sugeridos.
+- Importación de varios PDF/EPUB a la vez.
+- Importación de carpetas completas en navegadores compatibles.
+- Panel de progreso visible durante toda la importación.
+- Contador, porcentaje y nombre del archivo actual.
+- Confirmación visual al terminar.
+- Mensaje de compatibilidad si el navegador no permite seleccionar carpetas.
+- Tags sugeridos a partir de las carpetas al importar una carpeta.
 - Filtro básico por tags.
-- El sistema sigue usando IndexedDB para conservar los archivos en el navegador.
