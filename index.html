@@ -40,7 +40,7 @@
     <section class="toolbar">
       <label class="search"><span>🔎</span><input id="searchInput" type="search" placeholder="Buscar título, autor, archivo o tag…"></label>
       <div class="stats" id="stats">0 libros</div>
-      <button id="showTagsBtn" class="secondary tag-toggle" type="button">🏷️ Tags</button>
+      <button id="showCollectionsBtn" class="secondary tag-toggle" type="button">📚 Colecciones</button><button id="showTagsBtn" class="secondary tag-toggle" type="button">🏷️ Tags</button>
     </section>
 
     <section class="library-controls">
@@ -67,6 +67,7 @@
     </section>
 
     <section>
+      <div id="collectionBar" class="collection-bar hidden" aria-label="Colecciones"></div>
       <div id="tagBar" class="tag-bar hidden" aria-label="Filtros por tags"></div>
       <div id="collectionSummary" class="collection-summary hidden"></div>
       <div id="emptyState" class="empty">
@@ -101,6 +102,7 @@
           <label>Título<input id="editTitle" type="text"></label>
           <label>Autor<input id="editAuthor" type="text" placeholder="Opcional"></label>
           <div><div class="label">Tags</div><div id="modalTags" class="modal-tags"></div><div class="tag-editor"><input id="newTag" type="text" placeholder="Añadir tag…"><button id="addTag" class="secondary" type="button">＋</button></div></div>
+          <div class="modal-collections"><div class="label">Colecciones</div><div id="modalCollections" class="modal-tags"></div><div class="collection-create"><input id="newCollection" type="text" placeholder="Nueva colección…"><button id="createCollection" class="secondary" type="button">＋ Crear</button></div></div>
           <div class="modal-actions"><button id="saveBook" class="primary" type="button">Guardar cambios</button><button id="readBook" class="secondary" type="button">📖 Continuar leyendo</button></div>
           <div id="modalMeta" class="modal-meta"></div>
         </div>
