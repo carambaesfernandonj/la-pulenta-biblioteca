@@ -8,6 +8,10 @@ let currentObjectUrl = null;
 let currentEpubBook = null;
 let currentEpubRendition = null;
 let activeTag = null;
+let modalBook = null;
+let modalTags = [];
+let pdfjsLib = window.pdfjsLib || null;
+if(pdfjsLib && pdfjsLib.GlobalWorkerOptions){ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; }
 
 const $ = (s) => document.querySelector(s);
 
@@ -67,11 +71,39 @@ function coverFor(book){
   const type = book.type === "epub" ? "EPUB" : "PDF";
   const source = book.source === "drive" ? "DRIVE" : "DISPOSITIVO";
   const percent = Math.round((book.progress||0)*100);
+
+  if(book.coverData){
+    return `<div class="cover">
+      <img src="${book.coverData}" alt="" style="width:100%;height:100%;object-fit:cover;position:absolute;inset:0">
+      <span class="type" style="position:relative;z-index:1;background:#0009;color:#fff;padding:3px 5px;border-radius:4px;width:max-content">${type}</span>
+    </div>`;
+  }
+
   return `<div class="cover">
     <div class="type">${type} · ${source}</div>
     <div class="cover-title">${escapeHtml(book.title)}</div>
     <div class="source">${percent ? percent+"% leído" : "Sin empezar"}</div>
   </div>`;
+}
+
+async function generatePdfCover(file){
+  if(!window.pdfjsLib) return null;
+  try{
+    const buffer = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({data:buffer}).promise;
+    const page = await pdf.getPage(1);
+    const base = page.getViewport({scale:1});
+    const targetHeight = 520;
+    const viewport = page.getViewport({scale:targetHeight/base.height});
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    await page.render({canvasContext:canvas.getContext("2d"), viewport}).promise;
+    return canvas.toDataURL("image/jpeg", .78);
+  }catch(error){
+    console.warn("No se pudo generar portada PDF:", error);
+    return null;
+  }
 }
 
 function renderLibrary(allBooks){
@@ -96,7 +128,7 @@ function renderLibrary(allBooks){
   `).join("");
 
   $("#libraryGrid").querySelectorAll(".book").forEach(btn =>
-    btn.addEventListener("click", () => openBook(btn.dataset.id, allBooks))
+    btn.addEventListener("click", () => openBookDetails(btn.dataset.id))
   );
 
   renderTagBar(allBooks);
@@ -121,6 +153,82 @@ function renderTagBar(allBooks){
     renderLibrary(await getAllBooks());
   }));
 }
+
+async function openBookDetails(id){
+  const books = await getAllBooks();
+  const book = books.find(b => b.id === id);
+  if(!book) return;
+
+  modalBook = book;
+  modalTags = [...(book.tags || [])];
+
+  $("#modalTitle").textContent = book.title;
+  $("#editTitle").value = book.title;
+  $("#editAuthor").value = book.author || "";
+
+  $("#modalMeta").innerHTML =
+    `<b>Formato:</b> ${book.type.toUpperCase()}<br>` +
+    `<b>Archivo:</b> ${escapeHtml(book.fileName)}<br>` +
+    `<b>Origen:</b> ${book.source === "drive" ? "Google Drive" : "Dispositivo"}<br>` +
+    `<b>Progreso:</b> ${Math.round((book.progress||0)*100)}%`;
+
+  // Try to create a real PDF cover when the book does not have one yet.
+  if(!book.coverData && book.type === "pdf"){
+    $("#modalCover").innerHTML = `<div class="cover"><div class="type">PDF</div><div class="cover-title">Generando portada…</div><div class="source">Un momento</div></div>`;
+    const cover = await generatePdfCover(book.file);
+    if(cover){
+      book.coverData = cover;
+      book.updatedAt = Date.now();
+      await putBook(book);
+    }
+  }
+
+  $("#modalCover").innerHTML = book.coverData
+    ? `<img src="${book.coverData}" alt="Portada de ${escapeHtml(book.title)}">`
+    : coverFor(book);
+
+  renderModalTags();
+  $("#bookModal").classList.remove("hidden");
+}
+
+function renderModalTags(){
+  const box = $("#modalTags");
+  box.innerHTML = modalTags.length
+    ? modalTags.map((tag,i) =>
+        `<span class="tag-edit-chip">#${escapeHtml(tag)}
+          <button type="button" data-i="${i}" aria-label="Quitar tag">✕</button>
+        </span>`
+      ).join("")
+    : `<span class="book-meta">Sin tags todavía.</span>`;
+
+  box.querySelectorAll("button").forEach(btn => btn.addEventListener("click", () => {
+    modalTags.splice(Number(btn.dataset.i),1);
+    renderModalTags();
+  }));
+}
+
+function closeBookDetails(){
+  $("#bookModal").classList.add("hidden");
+  modalBook = null;
+  modalTags = [];
+}
+
+async function saveBookDetails(){
+  if(!modalBook) return;
+
+  modalBook.title = $("#editTitle").value.trim() || modalBook.title;
+  modalBook.author = $("#editAuthor").value.trim();
+  modalBook.tags = [...new Set(
+    modalTags.map(t => t.trim().toLowerCase().replace(/\s+/g,"-")).filter(Boolean)
+  )];
+  modalBook.updatedAt = Date.now();
+
+  await putBook(modalBook);
+  closeBookDetails();
+  renderLibrary(await getAllBooks());
+  showToast("Cambios guardados.");
+}
+
 
 function renderContinue(books){
   const book = books.find(b => (b.progress||0) > 0);
@@ -255,6 +363,12 @@ async function addFiles(fileList){
       .map(x => x.toLowerCase().replace(/\s+/g,"-"));
 
     try{
+      let coverData = null;
+      if(lower.endsWith(".pdf")){
+        setLoading(true, "Preparando portada…", `Generando miniatura: ${file.name}`, added, files.length, false);
+        coverData = await generatePdfCover(file);
+      }
+
       await putBook({
         id: makeId(),
         title: titleFromFilename(file.name),
@@ -268,6 +382,8 @@ async function addFiles(fileList){
         tags: [...new Set(suggestedTags)],
         collections: [],
         favorite: false,
+        author: "",
+        coverData,
         updatedAt: Date.now()
       });
 
@@ -351,6 +467,40 @@ document.addEventListener("click", (e) => {
   if(!e.target.closest(".add-wrap")) $("#addMenu").classList.add("hidden");
 });
 
+$("#modalClose").addEventListener("click", closeBookDetails);
+
+$("#bookModal").addEventListener("click", e => {
+  if(e.target === $("#bookModal")) closeBookDetails();
+});
+
+$("#saveBook").addEventListener("click", saveBookDetails);
+
+$("#addTag").addEventListener("click", () => {
+  const input = $("#newTag");
+  const tag = input.value.trim().toLowerCase().replace(/\s+/g,"-");
+  if(tag && !modalTags.includes(tag)){
+    modalTags.push(tag);
+    renderModalTags();
+  }
+  input.value = "";
+  input.focus();
+});
+
+$("#newTag").addEventListener("keydown", e => {
+  if(e.key === "Enter"){
+    e.preventDefault();
+    $("#addTag").click();
+  }
+});
+
+$("#readBook").addEventListener("click", async () => {
+  if(!modalBook) return;
+  const id = modalBook.id;
+  closeBookDetails();
+  await openBook(id, await getAllBooks());
+});
+
+
 $("#searchInput").addEventListener("input", async () => renderLibrary(await getAllBooks()));
 $("#closeReaderBtn").addEventListener("click", closeReader);
 $("#saveProgressBtn").addEventListener("click", async () => {
@@ -368,7 +518,9 @@ $("#saveProgressBtn").addEventListener("click", async () => {
 });
 
 document.addEventListener("keydown", e => {
-  if(e.key === "Escape" && !$("#reader").classList.contains("hidden")) closeReader();
+  if(e.key !== "Escape") return;
+  if(!$("#bookModal").classList.contains("hidden")) closeBookDetails();
+  else if(!$("#reader").classList.contains("hidden")) closeReader();
 });
 
 (async function init(){

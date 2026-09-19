@@ -83,9 +83,42 @@
       <div id="loadingHint" class="loading-hint">No cierres esta ventana hasta que termine.</div>
     </div>
   </div>
+  <div id="bookModal" class="book-modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="book-modal-card">
+      <button id="modalClose" class="modal-close" type="button" aria-label="Cerrar">✕</button>
+      <div class="modal-grid">
+        <div id="modalCover" class="modal-cover"></div>
+        <div class="modal-info">
+          <div class="eyebrow">DETALLES DEL LIBRO</div>
+          <h2 id="modalTitle">—</h2>
+          <label>Título
+            <input id="editTitle" type="text">
+          </label>
+          <label>Autor
+            <input id="editAuthor" type="text" placeholder="Opcional">
+          </label>
+          <div>
+            <div class="label">Tags</div>
+            <div id="modalTags" class="modal-tags"></div>
+            <div class="tag-editor">
+              <input id="newTag" type="text" placeholder="Añadir tag…">
+              <button id="addTag" class="secondary" type="button">＋</button>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button id="saveBook" class="primary" type="button">Guardar cambios</button>
+            <button id="readBook" class="secondary" type="button">📖 Continuar leyendo</button>
+          </div>
+          <div id="modalMeta" class="modal-meta"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# Biblioteca / Lector — v0.2.1
+# Biblioteca / Lector — v0.3.1
 
 Esta es la primera versión del proyecto.
 
@@ -50,3 +50,23 @@ v0.7 — Sincronización entre dispositivos
 - Mensaje de compatibilidad si el navegador no permite seleccionar carpetas.
 - Tags sugeridos a partir de las carpetas al importar una carpeta.
 - Filtro básico por tags.
+
+
+## v0.3
+
+- Ficha de detalles para cada libro antes de abrir el lector.
+- Edición de título y autor.
+- Tags editables desde la ficha.
+- Filtros por tags.
+- Portada generada desde la primera página de PDFs cuando PDF.js está disponible.
+- Los datos de biblioteca siguen en IndexedDB.
+- Se mantiene el progreso de lectura.
+
+
+## v0.3.1 — corrección
+
+- Corregida la ficha de detalles que no se abría desde los libros.
+- Corregida la edición y creación de tags.
+- Corregido el botón "Continuar leyendo" desde la ficha.
+- PDF.js cambiado a una carga más compatible con navegadores móviles/tablet.
+- Las portadas PDF se generan al importar y también se intentan generar al abrir un libro antiguo sin portada.
