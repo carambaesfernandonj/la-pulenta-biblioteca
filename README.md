@@ -1,4 +1,4 @@
-# La Pulenta Biblioteca v0.7
+# La Pulenta Biblioteca v0.7.1
 
 ## Novedades
 - Nueva portada de biblioteca con estanterías visuales.
@@ -18,3 +18,7 @@ Reemplaza los archivos del repositorio de GitHub Pages por los de esta versión.
 - Colecciones viven en su propia pantalla.
 - Biblioteca conserva búsqueda, tags, filtros, favoritos y ordenamiento.
 - Se mantiene el lector EPUB estable de v0.4.3.
+
+
+## v0.7.1
+- Portadas con inclinaciones sutiles y variadas en vistas de libros y estanterías.
