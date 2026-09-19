@@ -157,7 +157,19 @@ async function createEpubRendition(b, holder){
     const cfi=loc?.start?.cfi;
     if(cfi){
       currentBook.cfi=cfi;
-      currentBook.progress=Number(loc.start.percentage||0);
+      // epub.js no siempre rellena loc.start.percentage. La fuente fiable es
+      // la tabla de posiciones que generamos al abrir el EPUB.
+      let pct=NaN;
+      try{
+        if(currentEpubBook?.locations?.length){
+          pct=Number(currentEpubBook.locations.percentageFromCfi(cfi));
+        }
+      }catch(e){}
+      if(!Number.isFinite(pct)){
+        const raw=Number(loc?.start?.percentage);
+        if(Number.isFinite(raw)) pct=raw;
+      }
+      if(Number.isFinite(pct)) currentBook.progress=Math.max(0,Math.min(1,pct));
       currentBook.updatedAt=Date.now();
       try{await putBook(currentBook)}catch(e){console.warn('No pude guardar progreso EPUB',e)}
       updateReaderInfo();
@@ -224,7 +236,7 @@ document.querySelectorAll(".nav-btn").forEach(b=>b.onclick=()=>showView(b.datase
 $("#homeLibraryBtn").onclick=()=>showView("library");
 $("#newCollectionPageBtn").onclick=()=>createCollectionPrompt();
 $("#newCollectionEmptyBtn").onclick=()=>createCollectionPrompt();
-$("#readBook").onclick=async()=>{if(!modalBook)return;const id=modalBook.id;closeBookDetails();await openBook(id,await getAllBooks())};$("#closeReaderBtn").onclick=closeReader;$("#saveProgressBtn").onclick=async()=>{if(!currentBook)return;if(currentEpubRendition){const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;let pct=Number(loc?.start?.percentage);if(!Number.isFinite(pct)||pct<=0){try{pct=Number(currentEpubBook.locations.percentageFromCfi(cfi))}catch(e){}}if(Number.isFinite(pct))currentBook.progress=Math.max(0,Math.min(1,pct));currentBook.updatedAt=Date.now();await putBook(currentBook)}}toast('Posición guardada.')};
+$("#readBook").onclick=async()=>{if(!modalBook)return;const id=modalBook.id;closeBookDetails();await openBook(id,await getAllBooks())};$("#closeReaderBtn").onclick=closeReader;$("#saveProgressBtn").onclick=async()=>{if(!currentBook)return;if(currentEpubRendition){const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;let pct=Number(loc?.start?.percentage);if(!Number.isFinite(pct)){try{pct=Number(currentEpubBook.locations.percentageFromCfi(cfi))}catch(e){}}if(Number.isFinite(pct))currentBook.progress=Math.max(0,Math.min(1,pct));currentBook.updatedAt=Date.now();await putBook(currentBook)}}toast('Posición guardada.')};
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$("#bookModal").classList.contains('hidden'))closeBookDetails();else if(!$("#reader").classList.contains('hidden'))closeReader()});
 (async()=>{try{loadCollections();await openDB();renderLibrary(await getAllBooks())}catch(e){console.error(e);toast('No se pudo iniciar la biblioteca en este navegador.')}})();
 
