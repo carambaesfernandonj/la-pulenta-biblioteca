@@ -44,7 +44,9 @@ function renderCollectionSummary(all,shown){const e=$("#collectionSummary");if(!
 function shelfCard(b){return `<button class="shelf-book" data-id="${esc(b.id)}" type="button">${coverFor(b)}<span class="shelf-title">${esc(b.title)}</span><span class="shelf-author">${esc(b.author||'Sin autor')}</span></button>`}
 function renderHomeDashboard(all){
   const el=$("#homeCurrent"), empty=$("#homeEmpty");
-  const current=[...all].filter(b=>(b.progress||0)>0).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,20);
+  // Una lectura actual es un libro que ya fue abierto, aunque todavía vaya en 0%.
+  // Así también aparecen en Inicio los libros que recién empezaste.
+  const current=[...all].filter(b=>(b.lastOpenedAt||0)>0 || (b.progress||0)>0).sort((a,b)=>((b.lastOpenedAt||b.updatedAt||0)-(a.lastOpenedAt||a.updatedAt||0))).slice(0,20);
   if(current.length){
     el.classList.remove('hidden'); empty.classList.add('hidden');
     el.innerHTML=`<div class="shelf-head"><div><span class="eyebrow">HASTA 20</span><h3>Continúa donde quedaste</h3></div><button class="secondary shelf-link" id="homeAllLibraryBtn" type="button">Ver biblioteca →</button></div><div class="book-shelf current-reading-shelf">${current.map(shelfCard).join('')}</div>`;
@@ -97,8 +99,9 @@ async function deleteCollection(name){
   toast(`Colección “${name}” eliminada.`);
 }
 
-function showView(view){
+async function showView(view){
   currentView=view;
+  try{if(view==='home'||view==='collections') renderLibrary(await getAllBooks())}catch(e){}
   ["home","collections","library"].forEach(v=>$("#view"+v.charAt(0).toUpperCase()+v.slice(1))?.classList.toggle('hidden',v!==view));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   if(view==='home') window.scrollTo({top:0,behavior:'smooth'});
@@ -120,7 +123,8 @@ function updateFavoriteButton(){const on=!!modalBook?.favorite;$("#favoriteBook"
 function closeBookDetails(){$("#bookModal").classList.add('hidden');modalBook=null;modalTags=[]}
 async function saveBookDetails(){if(!modalBook)return;modalBook.title=$("#editTitle").value.trim()||modalBook.title;modalBook.author=$("#editAuthor").value.trim();modalBook.tags=[...new Set(modalTags.map(normTag).filter(Boolean))];modalBook.collections=[...new Set((modalBook.collections||[]).filter(c=>collections.includes(c)))];modalBook.updatedAt=Date.now();await putBook(modalBook);closeBookDetails();renderLibrary(await getAllBooks());toast('Cambios guardados.')}
 function fileUrl(f){if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=URL.createObjectURL(f);return currentObjectUrl}
-function closeReader(){
+async function closeReader(){
+  if(currentBook){try{await putBook(currentBook)}catch(e){}}
   if(currentEpubRendition){try{currentEpubRendition.destroy()}catch(e){}}
   if(currentEpubBook){try{currentEpubBook.destroy()}catch(e){}}
   currentEpubRendition=null;
@@ -130,6 +134,7 @@ function closeReader(){
   $("#readerBody").innerHTML='';
   $("#reader").classList.add('hidden');
   currentBook=null
+  try{renderLibrary(await getAllBooks())}catch(e){}
 }
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}
 async function createEpubRendition(b, holder){
@@ -140,6 +145,8 @@ async function createEpubRendition(b, holder){
   currentEpubBook = ePub();
   await currentEpubBook.open(buffer, 'binary');
   await currentEpubBook.ready;
+  // Generamos una tabla de posiciones para poder calcular un porcentaje fiable.
+  try{await currentEpubBook.locations.generate(1000)}catch(e){console.warn('No pude generar posiciones EPUB',e)}
   await nextFrame();
   const rect=holder.getBoundingClientRect();
   const width=Math.max(320,Math.floor(rect.width));
@@ -161,10 +168,15 @@ async function createEpubRendition(b, holder){
 }
 function updateReaderInfo(){
   if(!currentBook)return;
-  $("#readerInfo").textContent=`${(currentBook.type||'pdf').toUpperCase()} · ${currentBook.source==='drive'?'Google Drive':'Dispositivo'} · ${Math.round((currentBook.progress||0)*100)}%`;
+  const pct=Math.round((currentBook.progress||0)*100);
+  $("#readerInfo").textContent=`${(currentBook.type||'pdf').toUpperCase()} · ${currentBook.source==='drive'?'Google Drive':'Dispositivo'} · ${pct}%`;
 }
 async function openBook(id,books){
   const b=(books||await getAllBooks()).find(x=>x.id===id);if(!b)return;
+  // Registrar que el usuario abrió este libro para que aparezca en Lecturas actuales.
+  b.lastOpenedAt=Date.now();
+  b.updatedAt=b.lastOpenedAt;
+  try{await putBook(b)}catch(e){console.warn('No pude registrar la lectura actual',e)}
   currentBook=b;
   $("#readerTitle").textContent=b.title;
   updateReaderInfo();
@@ -212,7 +224,7 @@ document.querySelectorAll(".nav-btn").forEach(b=>b.onclick=()=>showView(b.datase
 $("#homeLibraryBtn").onclick=()=>showView("library");
 $("#newCollectionPageBtn").onclick=()=>createCollectionPrompt();
 $("#newCollectionEmptyBtn").onclick=()=>createCollectionPrompt();
-$("#readBook").onclick=async()=>{if(!modalBook)return;const id=modalBook.id;closeBookDetails();await openBook(id,await getAllBooks())};$("#closeReaderBtn").onclick=closeReader;$("#saveProgressBtn").onclick=async()=>{if(!currentBook)return;if(currentEpubRendition){const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;currentBook.progress=Number(loc.start.percentage||0);currentBook.updatedAt=Date.now();await putBook(currentBook)}}toast('Posición guardada.')};
+$("#readBook").onclick=async()=>{if(!modalBook)return;const id=modalBook.id;closeBookDetails();await openBook(id,await getAllBooks())};$("#closeReaderBtn").onclick=closeReader;$("#saveProgressBtn").onclick=async()=>{if(!currentBook)return;if(currentEpubRendition){const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;let pct=Number(loc?.start?.percentage);if(!Number.isFinite(pct)||pct<=0){try{pct=Number(currentEpubBook.locations.percentageFromCfi(cfi))}catch(e){}}if(Number.isFinite(pct))currentBook.progress=Math.max(0,Math.min(1,pct));currentBook.updatedAt=Date.now();await putBook(currentBook)}}toast('Posición guardada.')};
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$("#bookModal").classList.contains('hidden'))closeBookDetails();else if(!$("#reader").classList.contains('hidden'))closeReader()});
 (async()=>{try{loadCollections();await openDB();renderLibrary(await getAllBooks())}catch(e){console.error(e);toast('No se pudo iniciar la biblioteca en este navegador.')}})();
 

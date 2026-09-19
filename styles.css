@@ -72,3 +72,8 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
 .modal-info .modal-actions #readBook{font-weight:750}
 @media(max-width:700px){.collection-open{grid-template-columns:120px 1fr}.collection-page-card{padding:10px}}
 @media(max-width:560px){.collection-open{grid-template-columns:105px 1fr}.collection-page-actions{justify-content:stretch}.collection-action{flex:1}.page-note{line-height:1.4}}
+
+/* v0.8.1 — lecturas actuales y progreso siempre visibles */
+.modal-progress-wrap{display:block!important;visibility:visible!important}
+.modal-progress{display:block!important;min-height:7px}
+.modal-progress span{display:block!important;min-width:0}

@@ -1,17 +1,7 @@
-# La Pulenta Biblioteca v0.8
+# La Pulenta Biblioteca v0.8.2.1
 
-Nueva versión centrada en hacer que las colecciones y las fichas se sientan más como una biblioteca personal.
-
-## Cambios
-- Colecciones como tarjetas/espacios propios con pila visual de portadas.
-- Abrir una colección desde su tarjeta para filtrar la biblioteca.
-- Renombrar colecciones sin perder sus libros.
-- Eliminar colecciones sin eliminar los libros; solo se quita la asociación.
-- Ficha de libro con barra de progreso visual.
-- Se conserva la navegación Inicio / Colecciones / Biblioteca.
-- Se conserva el lector EPUB estable de v0.4.3.
-- No cambia la base IndexedDB existente.
-
-## Instalación
-Reemplazar los archivos del proyecto en GitHub Pages por los incluidos en este ZIP.
-No es necesario volver a importar los libros.
+Corrección de v0.8.2:
+- Inicio ahora muestra hasta 20 lecturas actuales según el último libro abierto, incluso si recién comenzaron y llevan 0%.
+- Se registra `lastOpenedAt` sin alterar los libros existentes.
+- La barra de progreso de la ficha queda forzada a mostrarse siempre, incluso en 0%.
+- Se mantiene el lector PDF/EPUB de v0.7.2 sin cambios.
