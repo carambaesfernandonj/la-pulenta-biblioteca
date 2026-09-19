@@ -2,7 +2,7 @@ const DB_NAME = "biblioteca_lector";
 const DB_VERSION = 1;
 const STORE = "books";
 let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
-let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[];
+let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[], currentView="home";
 let collections=[];
 const COLLECTIONS_KEY="pulenta_collections_v1";
 if(window.pdfjsLib?.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -37,26 +37,38 @@ function createCollectionPrompt(){
   const name=collectionLabel(prompt("Nombre de la nueva colección:"));
   if(!name)return;
   if(collections.some(c=>c.toLowerCase()===name.toLowerCase())){toast("Esa colección ya existe.");return}
-  collections.push(name);collections.sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();toast(`Colección “${name}” creada.`);renderLibrary(lastBooks);
+  collections.push(name);collections.sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();toast(`Colección “${name}” creada.`);renderLibrary(lastBooks);if(currentView==='collections')showView('collections');
 }
 function renderTagBar(all){const tags=[...new Set(all.flatMap(b=>b.tags||[]))].sort((a,b)=>a.localeCompare(b,'es'));const bar=$("#tagBar");if(!tags.length){bar.classList.add('hidden');bar.innerHTML='';return}bar.classList.remove('hidden');bar.innerHTML=`<button class="tag-chip ${!activeTag?'active':''}" data-tag="">Todos</button>`+tags.map(t=>`<button class="tag-chip ${activeTag===t?'active':''}" data-tag="${esc(t)}">#${esc(t)}</button>`).join('');bar.querySelectorAll('.tag-chip').forEach(b=>b.onclick=async()=>{activeTag=b.dataset.tag||null;renderLibrary(await getAllBooks())})}
 function renderCollectionSummary(all,shown){const e=$("#collectionSummary");if(!all.length){e.classList.add('hidden');return}const tags=[...new Set(shown.flatMap(b=>b.tags||[]))];e.classList.remove('hidden');e.innerHTML=`<span><b>${shown.length}</b> ${shown.length===1?'resultado':'resultados'}</span>${activeCollection?`<span>en <b>📚 ${esc(activeCollection)}</b></span>`:''}${activeTag?`<span>en <b>#${esc(activeTag)}</b></span>`:''}${activeFilter!=='all'?`<span>· ${activeFilter==='favorites'?'favoritos':activeFilter.toUpperCase()}</span>`:''}${tags.length&&!activeTag?`<span class="summary-tags">${tags.slice(0,5).map(t=>`#${esc(t)}`).join(' ')}</span>`:''}`}
 function shelfCard(b){return `<button class="shelf-book" data-id="${esc(b.id)}" type="button">${coverFor(b)}<span class="shelf-title">${esc(b.title)}</span><span class="shelf-author">${esc(b.author||'Sin autor')}</span></button>`}
 function renderHomeDashboard(all){
-  const collectionsEl=$("#homeCollections"),recentEl=$("#homeRecent"),favEl=$("#homeFavorites");
-  const withCollections=collections.map(name=>({name,books:all.filter(b=>(b.collections||[]).includes(name))})).filter(x=>x.books.length);
-  if(withCollections.length){
-    collectionsEl.classList.remove('hidden');
-    collectionsEl.innerHTML=`<div class="shelf-head"><div><span class="eyebrow">ESTANTERÍAS</span><h3>Mis colecciones</h3></div><button class="secondary shelf-link" id="homeCollectionsBtn" type="button">Ver todas →</button></div><div class="collection-shelves">${withCollections.slice(0,4).map(c=>{const cover=c.books.find(b=>b.coverData)||c.books[0];return `<button class="collection-card" data-collection-home="${esc(c.name)}" type="button"><div class="collection-card-cover">${coverFor(cover)}</div><div class="collection-card-copy"><strong>${esc(c.name)}</strong><span>${c.books.length} ${c.books.length===1?'libro':'libros'}</span></div></button>`}).join('')}</div>`;
-    collectionsEl.querySelectorAll('[data-collection-home]').forEach(btn=>btn.onclick=async()=>{activeCollection=btn.dataset.collectionHome;renderLibrary(await getAllBooks());document.querySelector('#collectionBar')?.scrollIntoView({behavior:'smooth',block:'center'});});
-    $("#homeCollectionsBtn").onclick=async()=>{activeCollection=null;renderLibrary(await getAllBooks());$("#collectionBar")?.scrollIntoView({behavior:'smooth',block:'center'});};
-  }else{collectionsEl.classList.add('hidden');collectionsEl.innerHTML=''}
-  const recent=[...all].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,6);
-  if(recent.length){recentEl.classList.remove('hidden');recentEl.innerHTML=`<div class="shelf-head"><div><span class="eyebrow">RECIENTES</span><h3>Añadidos recientemente</h3></div></div><div class="book-shelf">${recent.map(shelfCard).join('')}</div>`;recentEl.querySelectorAll('.shelf-book').forEach(btn=>btn.onclick=()=>openBookDetails(btn.dataset.id));}else{recentEl.classList.add('hidden');recentEl.innerHTML=''}
-  const fav=all.filter(b=>b.favorite).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,6);
-  if(fav.length){favEl.classList.remove('hidden');favEl.innerHTML=`<div class="shelf-head"><div><span class="eyebrow">TUS FAVORITOS</span><h3>Los que quieres tener a mano</h3></div></div><div class="book-shelf">${fav.map(shelfCard).join('')}</div>`;favEl.querySelectorAll('.shelf-book').forEach(btn=>btn.onclick=()=>openBookDetails(btn.dataset.id));}else{favEl.classList.add('hidden');favEl.innerHTML=''}
+  const el=$("#homeCurrent"), empty=$("#homeEmpty");
+  const current=[...all].filter(b=>(b.progress||0)>0).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0)).slice(0,20);
+  if(current.length){
+    el.classList.remove('hidden'); empty.classList.add('hidden');
+    el.innerHTML=`<div class="shelf-head"><div><span class="eyebrow">HASTA 20</span><h3>Continúa donde quedaste</h3></div><button class="secondary shelf-link" id="homeAllLibraryBtn" type="button">Ver biblioteca →</button></div><div class="book-shelf current-reading-shelf">${current.map(shelfCard).join('')}</div>`;
+    el.querySelectorAll('.shelf-book').forEach(btn=>btn.onclick=()=>openBookDetails(btn.dataset.id));
+    $("#homeAllLibraryBtn").onclick=()=>showView('library');
+  }else{el.classList.add('hidden');empty.classList.remove('hidden')}
 }
-function renderLibrary(all){const shown=filtered(all);renderHomeDashboard(all);$("#stats").textContent=`${all.length} libro${all.length===1?'':'s'}`;$("#emptyState").classList.toggle('hidden',all.length!==0);$("#noResults").classList.toggle('hidden',!all.length||shown.length!==0);$("#libraryGrid").classList.toggle('list-view',viewMode==='list');renderCollectionBar(all);renderTagBar(all);renderCollectionSummary(all,shown);renderContinue(all);$("#libraryGrid").innerHTML=shown.map(b=>`<button class="book" data-id="${b.id}" type="button">${coverFor(b)}<div class="book-content"><div class="book-title">${esc(b.title)}</div><div class="book-author">${esc(b.author||'Sin autor')}</div><div class="book-meta">${(b.type||'pdf').toUpperCase()} · ${Math.round((b.progress||0)*100)}%</div><div class="progress"><span style="width:${Math.max(0,Math.min(100,(b.progress||0)*100))}%"></span></div><div class="book-meta tags">${(b.tags||[]).slice(0,4).map(t=>'#'+esc(t)).join(' ')}</div></div></button>`).join('');$("#libraryGrid").querySelectorAll('.book').forEach(x=>x.onclick=()=>openBookDetails(x.dataset.id))}
+function renderCollectionsPage(all){
+  const grid=$("#collectionsPageGrid"), empty=$("#collectionsEmpty");
+  const items=collections.map(name=>({name,books:all.filter(b=>(b.collections||[]).includes(name))}));
+  if(!items.length){grid.innerHTML='';grid.classList.add('hidden');empty.classList.remove('hidden');return}
+  grid.classList.remove('hidden');empty.classList.add('hidden');
+  grid.innerHTML=items.map(c=>{const covers=c.books.filter(b=>b.coverData).slice(0,3);const fallback=c.books[0];return `<button class="collection-page-card" data-collection-page="${esc(c.name)}" type="button"><div class="collection-page-covers">${covers.length?covers.map(b=>coverFor(b)).join(''):coverFor(fallback||{title:c.name,type:'pdf'})}</div><div class="collection-page-copy"><span class="eyebrow">COLECCIÓN</span><strong>${esc(c.name)}</strong><span>${c.books.length} ${c.books.length===1?'libro':'libros'}</span></div></button>`}).join('');
+  grid.querySelectorAll('[data-collection-page]').forEach(btn=>btn.onclick=()=>{activeCollection=btn.dataset.collectionPage;showView('library');setTimeout(()=>{renderLibrary(lastBooks);$("#collectionBar")?.scrollIntoView({behavior:'smooth',block:'center'})},0)});
+}
+function showView(view){
+  currentView=view;
+  ["home","collections","library"].forEach(v=>$("#view"+v.charAt(0).toUpperCase()+v.slice(1))?.classList.toggle('hidden',v!==view));
+  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
+  if(view==='home') window.scrollTo({top:0,behavior:'smooth'});
+  if(view==='collections') window.scrollTo({top:0,behavior:'smooth'});
+  if(view==='library') window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderLibrary(all){const shown=filtered(all);renderHomeDashboard(all);renderCollectionsPage(all);$("#stats").textContent=`${all.length} libro${all.length===1?'':'s'}`;$("#emptyState").classList.toggle('hidden',all.length!==0);$("#noResults").classList.toggle('hidden',!all.length||shown.length!==0);$("#libraryGrid").classList.toggle('list-view',viewMode==='list');renderCollectionBar(all);renderTagBar(all);renderCollectionSummary(all,shown);$("#libraryGrid").innerHTML=shown.map(b=>`<button class="book" data-id="${b.id}" type="button">${coverFor(b)}<div class="book-content"><div class="book-title">${esc(b.title)}</div><div class="book-author">${esc(b.author||'Sin autor')}</div><div class="book-meta">${(b.type||'pdf').toUpperCase()} · ${Math.round((b.progress||0)*100)}%</div><div class="progress"><span style="width:${Math.max(0,Math.min(100,(b.progress||0)*100))}%"></span></div><div class="book-meta tags">${(b.tags||[]).slice(0,4).map(t=>'#'+esc(t)).join(' ')}</div></div></button>`).join('');$("#libraryGrid").querySelectorAll('.book').forEach(x=>x.onclick=()=>openBookDetails(x.dataset.id))}
 function renderContinue(all){const candidates=all.filter(b=>(b.progress||0)>0).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const b=candidates[0];$("#continueSection").classList.toggle('hidden',!b);if(!b)return;$("#continueTitle").textContent=b.title;$("#continueMeta").textContent=`${Math.round(b.progress*100)}% leído · ${(b.type||'pdf').toUpperCase()}${b.author?' · '+b.author:''}`;$("#continueCover").innerHTML=coverFor(b,true);$("#continueBtn").onclick=()=>openBook(b.id,all)}
 async function openBookDetails(id){const b=(await getAllBooks()).find(x=>x.id===id);if(!b)return;modalBook=b;modalTags=[...(b.tags||[])];$("#modalTitle").textContent=b.title;$("#editTitle").value=b.title;$("#editAuthor").value=b.author||'';updateFavoriteButton();$("#modalMeta").innerHTML=`<b>Formato:</b> ${(b.type||'pdf').toUpperCase()}<br><b>Archivo:</b> ${esc(b.fileName)}<br><b>Origen:</b> ${b.source==='drive'?'Google Drive':'Dispositivo'}<br><b>Progreso:</b> ${Math.round((b.progress||0)*100)}%`;if(!b.coverData&&b.type==='pdf'&&b.file){$("#modalCover").innerHTML='<div class="cover"><div class="type">PDF</div><div class="cover-title">Generando portada…</div></div>';const c=await generatePdfCover(b.file);if(c){b.coverData=c;await putBook(b)}}$("#modalCover").innerHTML=b.coverData?`<img src="${b.coverData}" alt="Portada">`:coverFor(b);renderModalTags();renderModalCollections();$("#bookModal").classList.remove('hidden')}
 function renderModalCollections(){
@@ -159,6 +171,10 @@ $("#modalClose").onclick=closeBookDetails;$("#bookModal").onclick=e=>{if(e.targe
 $("#createCollection").onclick=()=>{const i=$("#newCollection"),name=collectionLabel(i.value);if(!name){i.focus();return}if(collections.some(c=>c.toLowerCase()===name.toLowerCase())){toast("Esa colección ya existe.");i.select();return}collections.push(name);collections.sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();if(modalBook){modalBook.collections=[...new Set([...(modalBook.collections||[]),name])]}i.value='';renderModalCollections();renderLibrary(lastBooks);toast(`Colección “${name}” creada y asignada.`)};
 $("#newCollection").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#createCollection").click()}};
 $("#showCollectionsBtn").onclick=async()=>{const b=$("#collectionBar");if(b.classList.contains('hidden'))renderCollectionBar(await getAllBooks());else{activeCollection=null;renderLibrary(await getAllBooks())}};
+document.querySelectorAll(".nav-btn").forEach(b=>b.onclick=()=>showView(b.dataset.view));
+$("#homeLibraryBtn").onclick=()=>showView("library");
+$("#newCollectionPageBtn").onclick=()=>createCollectionPrompt();
+$("#newCollectionEmptyBtn").onclick=()=>createCollectionPrompt();
 $("#readBook").onclick=async()=>{if(!modalBook)return;const id=modalBook.id;closeBookDetails();await openBook(id,await getAllBooks())};$("#closeReaderBtn").onclick=closeReader;$("#saveProgressBtn").onclick=async()=>{if(!currentBook)return;if(currentEpubRendition){const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;currentBook.progress=Number(loc.start.percentage||0);currentBook.updatedAt=Date.now();await putBook(currentBook)}}toast('Posición guardada.')};
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$("#bookModal").classList.contains('hidden'))closeBookDetails();else if(!$("#reader").classList.contains('hidden'))closeReader()});
 (async()=>{try{loadCollections();await openDB();renderLibrary(await getAllBooks())}catch(e){console.error(e);toast('No se pudo iniciar la biblioteca en este navegador.')}})();

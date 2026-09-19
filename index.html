@@ -15,6 +15,11 @@
       <div class="brand-mark">📚</div>
       <div><h1>La Pulenta Biblioteca</h1><p>Tu estantería digital.</p></div>
     </div>
+    <nav class="main-nav" aria-label="Navegación principal">
+      <button class="nav-btn active" data-view="home" type="button">🏠 Inicio</button>
+      <button class="nav-btn" data-view="collections" type="button">📚 Colecciones</button>
+      <button class="nav-btn" data-view="library" type="button">🗂 Biblioteca</button>
+    </nav>
     <div class="add-wrap">
       <button id="addBtn" class="primary" type="button">＋ Añadir</button>
       <div id="addMenu" class="add-menu hidden">
@@ -27,73 +32,56 @@
   </header>
 
   <main>
-    <section id="continueSection" class="hero hidden">
-      <div class="hero-copy">
-        <span class="eyebrow">CONTINUAR LEYENDO</span>
-        <h2 id="continueTitle">—</h2>
-        <p id="continueMeta">—</p>
-        <button id="continueBtn" class="secondary">Abrir donde quedé →</button>
+    <section id="viewHome" class="app-view">
+      <div class="page-intro">
+        <div><span class="eyebrow">LA PULENTA</span><h2>Lecturas actuales</h2></div>
+        <p>Hasta 20 libros que ya empezaste a leer.</p>
       </div>
-      <div id="continueCover" class="big-cover"></div>
-    </section>
-
-    <section id="homeDashboard" class="home-dashboard">
-      <div id="homeCollections" class="shelf-section hidden"></div>
-      <div id="homeRecent" class="shelf-section hidden"></div>
-      <div id="homeFavorites" class="shelf-section hidden"></div>
-    </section>
-
-    <section class="library-heading">
-      <div>
-        <span class="eyebrow">TU BIBLIOTECA</span>
-        <h2>Tu colección</h2>
-      </div>
-      <p>Todo lo que lees, en un solo lugar.</p>
-    </section>
-
-    <section class="toolbar">
-      <label class="search"><span>🔎</span><input id="searchInput" type="search" placeholder="Buscar título, autor, archivo o tag…"></label>
-      <div class="stats" id="stats">0 libros</div>
-      <button id="showCollectionsBtn" class="secondary tag-toggle" type="button">📚 Colecciones</button><button id="showTagsBtn" class="secondary tag-toggle" type="button">🏷️ Tags</button>
-    </section>
-
-    <section class="library-controls">
-      <div class="filter-pills" id="filterPills">
-        <button class="filter-pill active" data-filter="all" type="button">Todos</button>
-        <button class="filter-pill" data-filter="favorites" type="button">♥ Favoritos</button>
-        <button class="filter-pill" data-filter="pdf" type="button">PDF</button>
-        <button class="filter-pill" data-filter="epub" type="button">EPUB</button>
-      </div>
-      <div class="sort-view">
-        <label class="sort-label">Ordenar
-          <select id="sortSelect">
-            <option value="updated">Últimos usados</option>
-            <option value="title">Título A–Z</option>
-            <option value="author">Autor A–Z</option>
-            <option value="progress">Progreso</option>
-          </select>
-        </label>
-        <div class="view-toggle" aria-label="Vista">
-          <button id="gridViewBtn" class="view-btn active" type="button" title="Vista de portadas">▦</button>
-          <button id="listViewBtn" class="view-btn" type="button" title="Vista de lista">☰</button>
+      <section id="homeDashboard" class="home-dashboard">
+        <div id="homeCurrent" class="shelf-section hidden"></div>
+        <div id="homeEmpty" class="empty hidden">
+          <div class="empty-icon">📖</div><h2>Aún no tienes lecturas actuales</h2>
+          <p>Cuando abras un libro y avances en él, aparecerá aquí para continuar rápidamente.</p>
+          <button id="homeLibraryBtn" class="primary" type="button">🗂 Ir a mi biblioteca</button>
         </div>
+      </section>
+    </section>
+
+    <section id="viewCollections" class="app-view hidden">
+      <div class="page-intro">
+        <div><span class="eyebrow">ORGANIZA COMO QUIERAS</span><h2>Mis colecciones</h2></div>
+        <button id="newCollectionPageBtn" class="primary" type="button">＋ Nueva colección</button>
+      </div>
+      <div id="collectionsPageGrid" class="collection-page-grid"></div>
+      <div id="collectionsEmpty" class="empty hidden">
+        <div class="empty-icon">📚</div><h2>Todavía no tienes colecciones</h2>
+        <p>Crea una para empezar a ordenar tus libros como quieras.</p>
+        <button id="newCollectionEmptyBtn" class="primary" type="button">＋ Crear colección</button>
       </div>
     </section>
 
-    <section>
-      <div id="collectionBar" class="collection-bar hidden" aria-label="Colecciones"></div>
-      <div id="tagBar" class="tag-bar hidden" aria-label="Filtros por tags"></div>
-      <div id="collectionSummary" class="collection-summary hidden"></div>
-      <div id="emptyState" class="empty">
-        <div class="empty-icon">📖</div>
-        <h2>Tu biblioteca está vacía</h2>
-        <p>Añade tu primer PDF o EPUB y quedará guardado aquí para la próxima vez.</p>
-        <button id="emptyAddBtn" class="primary">＋ Añadir mi primer libro</button>
-      </div>
-      <div id="noResults" class="empty hidden">
-        <div class="empty-icon">🔎</div><h2>No encontré libros</h2><p>Prueba con otra búsqueda, tag o filtro.</p>
-      </div>
-      <div id="libraryGrid" class="grid"></div>
+    <section id="viewLibrary" class="app-view hidden">
+      <section class="library-heading">
+        <div><span class="eyebrow">TU BIBLIOTECA</span><h2>Todos tus libros</h2></div>
+        <p>Busca, filtra y ordena toda tu colección.</p>
+      </section>
+      <section class="toolbar">
+        <label class="search"><span>🔎</span><input id="searchInput" type="search" placeholder="Buscar título, autor, archivo o tag…"></label>
+        <div class="stats" id="stats">0 libros</div>
+        <button id="showCollectionsBtn" class="secondary tag-toggle" type="button">📚 Colecciones</button><button id="showTagsBtn" class="secondary tag-toggle" type="button">🏷️ Tags</button>
+      </section>
+      <section class="library-controls">
+        <div class="filter-pills" id="filterPills">
+          <button class="filter-pill active" data-filter="all" type="button">Todos</button><button class="filter-pill" data-filter="favorites" type="button">♥ Favoritos</button><button class="filter-pill" data-filter="pdf" type="button">PDF</button><button class="filter-pill" data-filter="epub" type="button">EPUB</button>
+        </div>
+        <div class="sort-view"><label class="sort-label">Ordenar<select id="sortSelect"><option value="updated">Últimos usados</option><option value="title">Título A–Z</option><option value="author">Autor A–Z</option><option value="progress">Progreso</option></select></label><div class="view-toggle" aria-label="Vista"><button id="gridViewBtn" class="view-btn active" type="button" title="Vista de portadas">▦</button><button id="listViewBtn" class="view-btn" type="button" title="Vista de lista">☰</button></div></div>
+      </section>
+      <section>
+        <div id="collectionBar" class="collection-bar hidden" aria-label="Colecciones"></div><div id="tagBar" class="tag-bar hidden" aria-label="Filtros por tags"></div><div id="collectionSummary" class="collection-summary hidden"></div>
+        <div id="emptyState" class="empty"><div class="empty-icon">📖</div><h2>Tu biblioteca está vacía</h2><p>Añade tu primer PDF o EPUB y quedará guardado aquí para la próxima vez.</p><button id="emptyAddBtn" class="primary">＋ Añadir mi primer libro</button></div>
+        <div id="noResults" class="empty hidden"><div class="empty-icon">🔎</div><h2>No encontré libros</h2><p>Prueba con otra búsqueda, tag o filtro.</p></div>
+        <div id="libraryGrid" class="grid"></div>
+      </section>
     </section>
   </main>
 
