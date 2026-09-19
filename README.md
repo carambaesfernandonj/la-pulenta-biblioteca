@@ -1,20 +1,10 @@
-# La Pulenta Biblioteca v0.4.1
+# La Pulenta Biblioteca v0.4.2
 
-Evolución de v0.3.1. Mantiene la biblioteca local en IndexedDB y los libros existentes.
+Corrección del lector EPUB.
 
-## Novedades
-- Biblioteca con identidad visual de La Pulenta Biblioteca.
-- Búsqueda por título, autor, archivo y tags.
-- Filtros: Todos, Favoritos, PDF y EPUB.
-- Orden: últimos usados, título A–Z, autor A–Z y progreso.
-- Vista de portadas o vista de lista.
-- Resumen de la colección y tags visibles.
-- Favoritos desde la ficha del libro.
-- Autor visible en las tarjetas.
-- Ficha de libro y edición de metadatos conservadas.
-- Portadas de PDF conservadas/generadas como en v0.3.1.
-- Importación múltiple y por carpeta conservada.
-- Lector actual conservado como lector provisional.
+- Carga EPUB mediante Blob URL, más compatible con archivos guardados en IndexedDB.
+- Fallback automático a ArrayBuffer si el navegador rechaza la primera vía.
+- Dimensiones numéricas reales del visor para mejorar el renderizado en PC y tablet.
+- Conserva CFI/progreso y el resto de funciones de v0.4.
 
-## Datos
-Los libros siguen guardándose en IndexedDB del navegador/dispositivo. Actualizar los archivos de GitHub Pages no debería borrar la biblioteca existente.
+Tus libros existentes no necesitan ser importados de nuevo.

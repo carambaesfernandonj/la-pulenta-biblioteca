@@ -1,7 +1,7 @@
 const DB_NAME = "biblioteca_lector";
 const DB_VERSION = 1;
 const STORE = "books";
-let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null;
+let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
 let activeTag=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[];
 if(window.pdfjsLib?.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 const $=s=>document.querySelector(s);
@@ -28,8 +28,80 @@ function updateFavoriteButton(){const on=!!modalBook?.favorite;$("#favoriteBook"
 function closeBookDetails(){$("#bookModal").classList.add('hidden');modalBook=null;modalTags=[]}
 async function saveBookDetails(){if(!modalBook)return;modalBook.title=$("#editTitle").value.trim()||modalBook.title;modalBook.author=$("#editAuthor").value.trim();modalBook.tags=[...new Set(modalTags.map(normTag).filter(Boolean))];modalBook.updatedAt=Date.now();await putBook(modalBook);closeBookDetails();renderLibrary(await getAllBooks());toast('Cambios guardados.')}
 function fileUrl(f){if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=URL.createObjectURL(f);return currentObjectUrl}
-function closeReader(){if(currentEpubRendition){try{currentEpubRendition.destroy()}catch(e){}}currentEpubRendition=null;currentEpubBook=null;if(currentObjectUrl){URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=null}$("#readerBody").innerHTML='';$("#reader").classList.add('hidden');currentBook=null}
-async function openBook(id,books){const b=(books||await getAllBooks()).find(x=>x.id===id);if(!b)return;currentBook=b;$("#readerTitle").textContent=b.title;$("#readerInfo").textContent=`${(b.type||'pdf').toUpperCase()} · ${b.source==='drive'?'Google Drive':'Dispositivo'} · ${Math.round((b.progress||0)*100)}%`;$("#readerBody").innerHTML='';$("#reader").classList.remove('hidden');if(b.type==='pdf'){const e=document.createElement('embed');e.src=fileUrl(b.file);e.type='application/pdf';$("#readerBody").appendChild(e)}else{if(typeof ePub!=='function'){$("#readerBody").innerHTML='<div class="epub-reader">No se pudo cargar el motor EPUB. Revisa tu conexión y vuelve a abrir la app.</div>';return}try{const holder=document.createElement('div');holder.className='epub-reader';$("#readerBody").appendChild(holder);const arrayBuffer=await b.file.arrayBuffer();currentEpubBook=ePub(arrayBuffer);await currentEpubBook.ready;currentEpubRendition=currentEpubBook.renderTo(holder,{width:'100%',height:'100%',spread:'auto',flow:'paginated'});await currentEpubRendition.display(b.cfi||undefined);currentEpubRendition.on('relocated',async loc=>{if(!currentBook)return;const cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;currentBook.progress=Number(loc.start.percentage||0);currentBook.updatedAt=Date.now();await putBook(currentBook)}})}catch(e){console.error('EPUB:',e);$("#readerBody").innerHTML='<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está en la biblioteca, pero el lector encontró un problema al cargar su contenido.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>'}}}
+function closeReader(){
+  if(currentEpubRendition){try{currentEpubRendition.destroy()}catch(e){}}
+  if(currentEpubBook){try{currentEpubBook.destroy()}catch(e){}}
+  currentEpubRendition=null;
+  currentEpubBook=null;
+  if(currentEpubUrl){URL.revokeObjectURL(currentEpubUrl);currentEpubUrl=null}
+  if(currentObjectUrl){URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=null}
+  $("#readerBody").innerHTML='';
+  $("#reader").classList.add('hidden');
+  currentBook=null
+}
+function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}
+async function createEpubRendition(b, holder){
+  // Use a Blob URL first: this is the most compatible path for EPUBs stored in IndexedDB,
+  // especially on mobile browsers. Fall back to ArrayBuffer for browsers that reject the URL.
+  const blob = b.file instanceof Blob ? b.file : new Blob([b.file], {type:'application/epub+zip'});
+  currentEpubUrl = URL.createObjectURL(blob);
+  try{
+    currentEpubBook = ePub(currentEpubUrl);
+    await currentEpubBook.ready;
+  }catch(firstError){
+    console.warn('EPUB URL load failed, trying ArrayBuffer', firstError);
+    if(currentEpubBook){try{currentEpubBook.destroy()}catch(e){}}
+    currentEpubBook=null;
+    URL.revokeObjectURL(currentEpubUrl);currentEpubUrl=null;
+    const buffer = await b.file.arrayBuffer();
+    currentEpubBook = ePub(buffer);
+    await currentEpubBook.ready;
+  }
+  await nextFrame();
+  const rect=holder.getBoundingClientRect();
+  const width=Math.max(320,Math.floor(rect.width));
+  const height=Math.max(320,Math.floor(rect.height));
+  currentEpubRendition=currentEpubBook.renderTo(holder,{width,height,spread:'auto',flow:'paginated',allowScriptedContent:false});
+  currentEpubRendition.on('relocated',async loc=>{
+    if(!currentBook)return;
+    const cfi=loc?.start?.cfi;
+    if(cfi){
+      currentBook.cfi=cfi;
+      currentBook.progress=Number(loc.start.percentage||0);
+      currentBook.updatedAt=Date.now();
+      try{await putBook(currentBook)}catch(e){console.warn('No pude guardar progreso EPUB',e)}
+    }
+  });
+  await currentEpubRendition.display(b.cfi||undefined);
+  return currentEpubRendition;
+}
+async function openBook(id,books){
+  const b=(books||await getAllBooks()).find(x=>x.id===id);if(!b)return;
+  currentBook=b;
+  $("#readerTitle").textContent=b.title;
+  $("#readerInfo").textContent=`${(b.type||'pdf').toUpperCase()} · ${b.source==='drive'?'Google Drive':'Dispositivo'} · ${Math.round((b.progress||0)*100)}%`;
+  $("#readerBody").innerHTML='';
+  $("#reader").classList.remove('hidden');
+  if(b.type==='pdf'){
+    const e=document.createElement('embed');
+    e.src=fileUrl(b.file);e.type='application/pdf';
+    $("#readerBody").appendChild(e);
+  }else{
+    if(typeof ePub!=='function'){
+      $("#readerBody").innerHTML='<div class="epub-reader epub-error"><h3>No se pudo cargar el motor EPUB</h3><p>Revisa tu conexión a internet y vuelve a abrir la app.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';
+      return;
+    }
+    const holder=document.createElement('div');
+    holder.className='epub-reader';
+    $("#readerBody").appendChild(holder);
+    try{
+      await createEpubRendition(b,holder);
+    }catch(e){
+      console.error('EPUB:',e);
+      $("#readerBody").innerHTML='<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero este EPUB no pudo ser interpretado por el lector actual.</p><p class="book-meta">Probamos dos métodos de carga y ambos fallaron.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';
+    }
+  }
+}
 function wait(ms){return new Promise(r=>setTimeout(r,ms))}
 function setLoading(show,title='',detail='',cur=0,total=0,done=false){const p=$("#loadingPanel");if(!show){p.classList.add('hidden');return}p.classList.remove('hidden');$("#loadingTitle").textContent=title;$("#loadingDetail").textContent=detail;const t=Math.max(0,+total||0),c=Math.max(0,Math.min(+cur||0,t||+cur||0)),pct=done?100:t?Math.round(c/t*100):0;$("#loadingBar").style.width=pct+'%';$("#loadingCount").textContent=t?`${c} / ${t}`:'Preparando…';$("#loadingPercent").textContent=pct+'%';$("#loadingDone").classList.toggle('hidden',!done);$("#loadingHint").classList.toggle('hidden',done)}
 async function addFiles(fileList){const files=[...fileList].filter(f=>/\.(pdf|epub)$/i.test(f.name));if(!files.length){toast('No encontré PDF o EPUB en la selección.');return}$("#addMenu").classList.add('hidden');setLoading(true,'Añadiendo libros…','Preparando la importación',0,files.length);await wait(250);let added=0,skipped=0;for(const f of files){const lower=f.name.toLowerCase(),relativePath=f.webkitRelativePath||f.name,folders=relativePath.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))];try{let coverData=null;if(lower.endsWith('.pdf')){setLoading(true,'Preparando portada…',`Generando miniatura: ${f.name}`,added,files.length);coverData=await generatePdfCover(f)}await putBook({id:makeId(),title:titleFromFilename(f.name),fileName:f.name,type:lower.endsWith('.epub')?'epub':'pdf',source:'local',file:f,relativePath,progress:0,cfi:null,tags,collections:[],favorite:false,author:'',coverData,updatedAt:Date.now()});added++;setLoading(true,'Añadiendo libros…',`Procesando: ${f.name}`,added,files.length);await wait(45)}catch(e){console.error(e);skipped++;setLoading(true,'Añadiendo libros…',`No se pudo añadir: ${f.name}`,added,files.length);await wait(120)}}renderLibrary(await getAllBooks());setLoading(true,'✓ Importación completada',`${added} añadido${added===1?'':'s'}${skipped?` · ${skipped} con problemas`:''}`,files.length,files.length,true);await wait(1600);setLoading(false);toast(skipped?`${added} libros añadidos · ${skipped} con problemas.`:`${added} libro${added===1?'':'s'} añadido${added===1?'':'s'} a tu biblioteca.`)}
