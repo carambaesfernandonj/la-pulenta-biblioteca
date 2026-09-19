@@ -83,7 +83,7 @@
   </main>
 
   <div id="reader" class="reader hidden" aria-modal="true" role="dialog">
-    <div class="reader-head"><div><strong id="readerTitle">—</strong><span id="readerInfo">—</span></div><div class="reader-actions"><button id="saveProgressBtn" class="secondary">Guardar posición</button><button id="closeReaderBtn" class="icon-btn" title="Cerrar">✕</button></div></div>
+    <div class="reader-head"><div><strong id="readerTitle">—</strong><span id="readerInfo">—</span></div><div class="reader-actions"><button id="prevPageBtn" class="secondary" type="button">← Anterior</button><button id="nextPageBtn" class="secondary" type="button">Siguiente →</button><button id="saveProgressBtn" class="secondary" type="button">Guardar posición</button><button id="closeReaderBtn" class="icon-btn" title="Cerrar">✕</button></div></div>
     <div id="readerBody" class="reader-body"></div>
   </div>
 
@@ -110,6 +110,7 @@
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
   <script src="app.js"></script>
 </body>

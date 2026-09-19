@@ -8,3 +8,8 @@ Corrección del lector EPUB.
 - Conserva CFI/progreso y el resto de funciones de v0.4.
 
 Tus libros existentes no necesitan ser importados de nuevo.
+
+
+## v0.4.3
+- Lector EPUB reparado: carga explícita del archivo como binario con JSZip.
+- Añadidos controles Anterior/Siguiente y teclas de página para EPUB.

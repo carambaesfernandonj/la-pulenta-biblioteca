@@ -41,27 +41,18 @@ function closeReader(){
 }
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}
 async function createEpubRendition(b, holder){
-  // Use a Blob URL first: this is the most compatible path for EPUBs stored in IndexedDB,
-  // especially on mobile browsers. Fall back to ArrayBuffer for browsers that reject the URL.
-  const blob = b.file instanceof Blob ? b.file : new Blob([b.file], {type:'application/epub+zip'});
-  currentEpubUrl = URL.createObjectURL(blob);
-  try{
-    currentEpubBook = ePub(currentEpubUrl);
-    await currentEpubBook.ready;
-  }catch(firstError){
-    console.warn('EPUB URL load failed, trying ArrayBuffer', firstError);
-    if(currentEpubBook){try{currentEpubBook.destroy()}catch(e){}}
-    currentEpubBook=null;
-    URL.revokeObjectURL(currentEpubUrl);currentEpubUrl=null;
-    const buffer = await b.file.arrayBuffer();
-    currentEpubBook = ePub(buffer);
-    await currentEpubBook.ready;
-  }
+  // epub.js 0.3.x is more reliable with archived EPUBs when JSZip is loaded
+  // separately and the archive is opened explicitly as binary data.
+  if(typeof JSZip==='undefined') throw new Error('JSZip no está disponible');
+  const buffer = await b.file.arrayBuffer();
+  currentEpubBook = ePub();
+  await currentEpubBook.open(buffer, 'binary');
+  await currentEpubBook.ready;
   await nextFrame();
   const rect=holder.getBoundingClientRect();
   const width=Math.max(320,Math.floor(rect.width));
   const height=Math.max(320,Math.floor(rect.height));
-  currentEpubRendition=currentEpubBook.renderTo(holder,{width,height,spread:'auto',flow:'paginated',allowScriptedContent:false});
+  currentEpubRendition=currentEpubBook.renderTo(holder,{method:'default',width,height,spread:'auto',flow:'paginated',allowScriptedContent:false});
   currentEpubRendition.on('relocated',async loc=>{
     if(!currentBook)return;
     const cfi=loc?.start?.cfi;
@@ -70,16 +61,21 @@ async function createEpubRendition(b, holder){
       currentBook.progress=Number(loc.start.percentage||0);
       currentBook.updatedAt=Date.now();
       try{await putBook(currentBook)}catch(e){console.warn('No pude guardar progreso EPUB',e)}
+      updateReaderInfo();
     }
   });
   await currentEpubRendition.display(b.cfi||undefined);
   return currentEpubRendition;
 }
+function updateReaderInfo(){
+  if(!currentBook)return;
+  $("#readerInfo").textContent=`${(currentBook.type||'pdf').toUpperCase()} · ${currentBook.source==='drive'?'Google Drive':'Dispositivo'} · ${Math.round((currentBook.progress||0)*100)}%`;
+}
 async function openBook(id,books){
   const b=(books||await getAllBooks()).find(x=>x.id===id);if(!b)return;
   currentBook=b;
   $("#readerTitle").textContent=b.title;
-  $("#readerInfo").textContent=`${(b.type||'pdf').toUpperCase()} · ${b.source==='drive'?'Google Drive':'Dispositivo'} · ${Math.round((b.progress||0)*100)}%`;
+  updateReaderInfo();
   $("#readerBody").innerHTML='';
   $("#reader").classList.remove('hidden');
   if(b.type==='pdf'){
@@ -95,10 +91,12 @@ async function openBook(id,books){
     holder.className='epub-reader';
     $("#readerBody").appendChild(holder);
     try{
+      await nextFrame();
       await createEpubRendition(b,holder);
     }catch(e){
       console.error('EPUB:',e);
-      $("#readerBody").innerHTML='<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero este EPUB no pudo ser interpretado por el lector actual.</p><p class="book-meta">Probamos dos métodos de carga y ambos fallaron.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';
+      const detail=esc(e?.message||String(e)||'Error desconocido');
+      $("#readerBody").innerHTML=`<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero el lector no pudo interpretar su contenido.</p><p class="book-meta">Detalle técnico: ${detail}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;
     }
   }
 }
@@ -117,3 +115,15 @@ let lastBooks=[];const originalRender=renderLibrary;renderLibrary=function(all){
 $("#modalClose").onclick=closeBookDetails;$("#bookModal").onclick=e=>{if(e.target===$("#bookModal"))closeBookDetails()};$("#saveBook").onclick=saveBookDetails;$("#favoriteBook").onclick=async()=>{if(!modalBook)return;modalBook.favorite=!modalBook.favorite;modalBook.updatedAt=Date.now();await putBook(modalBook);updateFavoriteButton();renderLibrary(await getAllBooks());toast(modalBook.favorite?'Añadido a favoritos.':'Quitado de favoritos.')};$("#addTag").onclick=()=>{const i=$("#newTag"),t=normTag(i.value);if(t&&!modalTags.includes(t)){modalTags.push(t);renderModalTags()}i.value='';i.focus()};$("#newTag").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#addTag").click()}};$("#readBook").onclick=async()=>{if(!modalBook)return;const id=modalBook.id;closeBookDetails();await openBook(id,await getAllBooks())};$("#closeReaderBtn").onclick=closeReader;$("#saveProgressBtn").onclick=async()=>{if(!currentBook)return;if(currentEpubRendition){const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;currentBook.progress=Number(loc.start.percentage||0);currentBook.updatedAt=Date.now();await putBook(currentBook)}}toast('Posición guardada.')};
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$("#bookModal").classList.contains('hidden'))closeBookDetails();else if(!$("#reader").classList.contains('hidden'))closeReader()});
 (async()=>{try{await openDB();renderLibrary(await getAllBooks())}catch(e){console.error(e);toast('No se pudo iniciar la biblioteca en este navegador.')}})();
+
+
+// Controles EPUB explícitos: además de los gestos/teclas del lector, permiten avanzar
+// en tablet y PC sin depender del comportamiento del iframe.
+const prevPageBtn=$("#prevPageBtn"), nextPageBtn=$("#nextPageBtn");
+if(prevPageBtn) prevPageBtn.onclick=async()=>{if(currentEpubRendition){try{await currentEpubRendition.prev()}catch(e){console.warn(e)}}};
+if(nextPageBtn) nextPageBtn.onclick=async()=>{if(currentEpubRendition){try{await currentEpubRendition.next()}catch(e){console.warn(e)}}};
+document.addEventListener('keydown',async e=>{
+  if($("#reader").classList.contains('hidden')||!currentEpubRendition)return;
+  if(e.key==='ArrowRight'||e.key==='PageDown'){e.preventDefault();try{await currentEpubRendition.next()}catch(err){console.warn(err)}}
+  if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();try{await currentEpubRendition.prev()}catch(err){console.warn(err)}}
+});
