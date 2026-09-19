@@ -57,9 +57,46 @@ function renderCollectionsPage(all){
   const items=collections.map(name=>({name,books:all.filter(b=>(b.collections||[]).includes(name))}));
   if(!items.length){grid.innerHTML='';grid.classList.add('hidden');empty.classList.remove('hidden');return}
   grid.classList.remove('hidden');empty.classList.add('hidden');
-  grid.innerHTML=items.map(c=>{const covers=c.books.filter(b=>b.coverData).slice(0,3);const fallback=c.books[0];return `<button class="collection-page-card" data-collection-page="${esc(c.name)}" type="button"><div class="collection-page-covers">${covers.length?covers.map(b=>coverFor(b)).join(''):coverFor(fallback||{title:c.name,type:'pdf'})}</div><div class="collection-page-copy"><span class="eyebrow">COLECCIÓN</span><strong>${esc(c.name)}</strong><span>${c.books.length} ${c.books.length===1?'libro':'libros'}</span></div></button>`}).join('');
+  grid.innerHTML=items.map(c=>{
+    const books=[...c.books].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+    const covers=books.filter(b=>b.coverData).slice(0,3);
+    const fallback=books[0];
+    const preview=covers.length?covers.map(b=>coverFor(b)).join(''):coverFor(fallback||{title:c.name,type:'pdf'});
+    return `<article class="collection-page-card" data-collection-card="${esc(c.name)}">
+      <button class="collection-open" data-collection-page="${esc(c.name)}" type="button" aria-label="Abrir colección ${esc(c.name)}">
+        <div class="collection-page-covers">${preview}</div>
+        <div class="collection-page-copy"><span class="eyebrow">COLECCIÓN</span><strong>${esc(c.name)}</strong><span>${c.books.length} ${c.books.length===1?'libro':'libros'}</span>${books[0]?`<small>${esc(books[0].title)}</small>`:''}</div>
+      </button>
+      <div class="collection-page-actions"><button class="secondary collection-action" data-rename-collection="${esc(c.name)}" type="button">✏️ Renombrar</button><button class="secondary collection-action danger" data-delete-collection="${esc(c.name)}" type="button">Eliminar</button></div>
+    </article>`;
+  }).join('');
   grid.querySelectorAll('[data-collection-page]').forEach(btn=>btn.onclick=()=>{activeCollection=btn.dataset.collectionPage;showView('library');setTimeout(()=>{renderLibrary(lastBooks);$("#collectionBar")?.scrollIntoView({behavior:'smooth',block:'center'})},0)});
+  grid.querySelectorAll('[data-rename-collection]').forEach(btn=>btn.onclick=()=>renameCollection(btn.dataset.renameCollection));
+  grid.querySelectorAll('[data-delete-collection]').forEach(btn=>btn.onclick=()=>deleteCollection(btn.dataset.deleteCollection));
 }
+async function renameCollection(oldName){
+  const name=collectionLabel(prompt(`Nuevo nombre para “${oldName}”:`,oldName));
+  if(!name||name===oldName)return;
+  if(collections.some(c=>c.toLowerCase()===name.toLowerCase()&&c!==oldName)){toast('Esa colección ya existe.');return}
+  collections=collections.map(c=>c===oldName?name:c).sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));
+  const books=await getAllBooks();
+  for(const b of books){if((b.collections||[]).includes(oldName)){b.collections=[...new Set((b.collections||[]).map(c=>c===oldName?name:c))];await putBook(b)}}
+  if(activeCollection===oldName)activeCollection=name;
+  saveCollections();
+  renderLibrary(await getAllBooks());
+  toast(`Colección renombrada a “${name}”.`);
+}
+async function deleteCollection(name){
+  if(!confirm(`¿Eliminar la colección “${name}”? Tus libros NO se eliminarán.`))return;
+  collections=collections.filter(c=>c!==name);
+  const books=await getAllBooks();
+  for(const b of books){if((b.collections||[]).includes(name)){b.collections=(b.collections||[]).filter(c=>c!==name);await putBook(b)}}
+  if(activeCollection===name)activeCollection=null;
+  saveCollections();
+  renderLibrary(await getAllBooks());
+  toast(`Colección “${name}” eliminada.`);
+}
+
 function showView(view){
   currentView=view;
   ["home","collections","library"].forEach(v=>$("#view"+v.charAt(0).toUpperCase()+v.slice(1))?.classList.toggle('hidden',v!==view));
@@ -70,7 +107,7 @@ function showView(view){
 }
 function renderLibrary(all){const shown=filtered(all);renderHomeDashboard(all);renderCollectionsPage(all);$("#stats").textContent=`${all.length} libro${all.length===1?'':'s'}`;$("#emptyState").classList.toggle('hidden',all.length!==0);$("#noResults").classList.toggle('hidden',!all.length||shown.length!==0);$("#libraryGrid").classList.toggle('list-view',viewMode==='list');renderCollectionBar(all);renderTagBar(all);renderCollectionSummary(all,shown);$("#libraryGrid").innerHTML=shown.map(b=>`<button class="book" data-id="${b.id}" type="button">${coverFor(b)}<div class="book-content"><div class="book-title">${esc(b.title)}</div><div class="book-author">${esc(b.author||'Sin autor')}</div><div class="book-meta">${(b.type||'pdf').toUpperCase()} · ${Math.round((b.progress||0)*100)}%</div><div class="progress"><span style="width:${Math.max(0,Math.min(100,(b.progress||0)*100))}%"></span></div><div class="book-meta tags">${(b.tags||[]).slice(0,4).map(t=>'#'+esc(t)).join(' ')}</div></div></button>`).join('');$("#libraryGrid").querySelectorAll('.book').forEach(x=>x.onclick=()=>openBookDetails(x.dataset.id))}
 function renderContinue(all){const candidates=all.filter(b=>(b.progress||0)>0).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const b=candidates[0];$("#continueSection").classList.toggle('hidden',!b);if(!b)return;$("#continueTitle").textContent=b.title;$("#continueMeta").textContent=`${Math.round(b.progress*100)}% leído · ${(b.type||'pdf').toUpperCase()}${b.author?' · '+b.author:''}`;$("#continueCover").innerHTML=coverFor(b,true);$("#continueBtn").onclick=()=>openBook(b.id,all)}
-async function openBookDetails(id){const b=(await getAllBooks()).find(x=>x.id===id);if(!b)return;modalBook=b;modalTags=[...(b.tags||[])];$("#modalTitle").textContent=b.title;$("#editTitle").value=b.title;$("#editAuthor").value=b.author||'';updateFavoriteButton();$("#modalMeta").innerHTML=`<b>Formato:</b> ${(b.type||'pdf').toUpperCase()}<br><b>Archivo:</b> ${esc(b.fileName)}<br><b>Origen:</b> ${b.source==='drive'?'Google Drive':'Dispositivo'}<br><b>Progreso:</b> ${Math.round((b.progress||0)*100)}%`;if(!b.coverData&&b.type==='pdf'&&b.file){$("#modalCover").innerHTML='<div class="cover"><div class="type">PDF</div><div class="cover-title">Generando portada…</div></div>';const c=await generatePdfCover(b.file);if(c){b.coverData=c;await putBook(b)}}$("#modalCover").innerHTML=b.coverData?`<img src="${b.coverData}" alt="Portada">`:coverFor(b);renderModalTags();renderModalCollections();$("#bookModal").classList.remove('hidden')}
+async function openBookDetails(id){const b=(await getAllBooks()).find(x=>x.id===id);if(!b)return;modalBook=b;modalTags=[...(b.tags||[])];$("#modalTitle").textContent=b.title;$("#editTitle").value=b.title;$("#editAuthor").value=b.author||'';updateFavoriteButton();const modalPct=Math.round((b.progress||0)*100);$("#modalProgressText").textContent=modalPct+"%";$("#modalProgressBar").style.width=modalPct+"%";$("#modalMeta").innerHTML=`<b>Formato:</b> ${(b.type||'pdf').toUpperCase()}<br><b>Archivo:</b> ${esc(b.fileName)}<br><b>Origen:</b> ${b.source==='drive'?'Google Drive':'Dispositivo'}`;if(!b.coverData&&b.type==='pdf'&&b.file){$("#modalCover").innerHTML='<div class="cover"><div class="type">PDF</div><div class="cover-title">Generando portada…</div></div>';const c=await generatePdfCover(b.file);if(c){b.coverData=c;await putBook(b)}}$("#modalCover").innerHTML=b.coverData?`<img src="${b.coverData}" alt="Portada">`:coverFor(b);renderModalTags();renderModalCollections();$("#bookModal").classList.remove('hidden')}
 function renderModalCollections(){
   const e=$("#modalCollections");
   if(!collections.length){e.innerHTML='<span class="book-meta">Todavía no tienes colecciones. Crea una con “＋ Crear”.</span>';return}

@@ -53,6 +53,7 @@
         <button id="newCollectionPageBtn" class="primary" type="button">＋ Nueva colección</button>
       </div>
       <div id="collectionsPageGrid" class="collection-page-grid"></div>
+      <p class="page-note">Las colecciones no mueven ni duplican tus archivos: solo los organizan.</p>
       <div id="collectionsEmpty" class="empty hidden">
         <div class="empty-icon">📚</div><h2>Todavía no tienes colecciones</h2>
         <p>Crea una para empezar a ordenar tus libros como quieras.</p>
@@ -106,7 +107,7 @@
           <div><div class="label">Tags</div><div id="modalTags" class="modal-tags"></div><div class="tag-editor"><input id="newTag" type="text" placeholder="Añadir tag…"><button id="addTag" class="secondary" type="button">＋</button></div></div>
           <div class="modal-collections"><div class="label">Colecciones</div><div id="modalCollections" class="modal-tags"></div><div class="collection-create"><input id="newCollection" type="text" placeholder="Nueva colección…"><button id="createCollection" class="secondary" type="button">＋ Crear</button></div></div>
           <div class="modal-actions"><button id="saveBook" class="primary" type="button">Guardar cambios</button><button id="readBook" class="secondary" type="button">📖 Continuar leyendo</button></div>
-          <div id="modalMeta" class="modal-meta"></div>
+          <div class="modal-progress-wrap"><div class="modal-progress-head"><span>Progreso</span><strong id="modalProgressText">0%</strong></div><div class="modal-progress"><span id="modalProgressBar"></span></div></div><div id="modalMeta" class="modal-meta"></div>
         </div>
       </div>
     </div>

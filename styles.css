@@ -53,3 +53,22 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
   .book-shelf .shelf-book:nth-child(5n) .cover{transform:rotate(-.8deg)}
   .book-shelf .shelf-book:hover .cover{transform:translateY(-5px) rotate(0deg)}
 }
+
+/* v0.8 — colecciones como espacios propios + ficha más editorial */
+.page-note{margin:16px 2px 0;color:var(--muted);font-size:12px}
+.collection-page-grid{align-items:stretch}
+.collection-page-card{position:relative;display:flex;flex-direction:column;align-items:stretch;padding:12px;overflow:hidden}
+.collection-open{border:0;background:transparent;padding:0;display:grid;grid-template-columns:130px 1fr;gap:15px;text-align:left;align-items:center;cursor:pointer;color:inherit;min-width:0}
+.collection-page-card:hover .collection-page-covers .cover{filter:saturate(1.04)}
+.collection-page-copy small{display:block;color:var(--muted);font-size:11px;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.collection-page-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+.collection-action{font-size:11px;padding:6px 8px}
+.collection-action.danger{color:#8a3f3f}
+.modal-progress-wrap{margin:16px 0 4px;padding:12px 13px;border:1px solid var(--line);background:var(--bg);border-radius:12px}
+.modal-progress-head{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--muted);margin-bottom:7px}
+.modal-progress-head strong{color:var(--ink);font-size:12px}
+.modal-progress{height:7px;background:var(--line);border-radius:999px;overflow:hidden}
+.modal-progress span{display:block;height:100%;width:0;background:var(--accent);border-radius:inherit;transition:width .2s}
+.modal-info .modal-actions #readBook{font-weight:750}
+@media(max-width:700px){.collection-open{grid-template-columns:120px 1fr}.collection-page-card{padding:10px}}
+@media(max-width:560px){.collection-open{grid-template-columns:105px 1fr}.collection-page-actions{justify-content:stretch}.collection-action{flex:1}.page-note{line-height:1.4}}

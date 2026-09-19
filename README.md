@@ -1,8 +1,17 @@
-# La Pulenta Biblioteca v0.7.2
+# La Pulenta Biblioteca v0.8
 
-## Novedades
-- Portadas inclinadas de forma sutil y variada en la vista de biblioteca.
-- El efecto también se aplica a las estanterías del Inicio.
-- La vista de lista permanece recta para priorizar la lectura de información.
-- Se mantiene el lector PDF/EPUB estable de la v0.4.3.
-- No cambia la estructura de datos ni requiere volver a importar libros.
+Nueva versión centrada en hacer que las colecciones y las fichas se sientan más como una biblioteca personal.
+
+## Cambios
+- Colecciones como tarjetas/espacios propios con pila visual de portadas.
+- Abrir una colección desde su tarjeta para filtrar la biblioteca.
+- Renombrar colecciones sin perder sus libros.
+- Eliminar colecciones sin eliminar los libros; solo se quita la asociación.
+- Ficha de libro con barra de progreso visual.
+- Se conserva la navegación Inicio / Colecciones / Biblioteca.
+- Se conserva el lector EPUB estable de v0.4.3.
+- No cambia la base IndexedDB existente.
+
+## Instalación
+Reemplazar los archivos del proyecto en GitHub Pages por los incluidos en este ZIP.
+No es necesario volver a importar los libros.
