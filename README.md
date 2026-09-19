@@ -1,4 +1,4 @@
-# La Pulenta Biblioteca v0.4
+# La Pulenta Biblioteca v0.4.1
 
 Evolución de v0.3.1. Mantiene la biblioteca local en IndexedDB y los libros existentes.
 
