@@ -1,7 +1,12 @@
-# La Pulenta Biblioteca v0.8.2.1
+# La Pulenta Biblioteca v0.9
 
-Corrección de v0.8.2:
-- Inicio ahora muestra hasta 20 lecturas actuales según el último libro abierto, incluso si recién comenzaron y llevan 0%.
-- Se registra `lastOpenedAt` sin alterar los libros existentes.
-- La barra de progreso de la ficha queda forzada a mostrarse siempre, incluso en 0%.
-- Se mantiene el lector PDF/EPUB de v0.7.2 sin cambios.
+## Metadata automática
+- Lee metadatos disponibles de EPUB (título, autor, idioma, editorial y descripción).
+- Extrae la portada declarada por el EPUB cuando existe.
+- Lee metadatos básicos de PDF mediante PDF.js y mantiene la portada de la primera página.
+- Los metadatos se pueden editar desde la ficha del libro.
+- Los libros existentes se enriquecen al abrir su ficha por primera vez.
+- Mantiene lector EPUB/PDF, progreso, lecturas actuales, colecciones, tags y favoritos.
+
+## Instalación
+Reemplaza los archivos de la versión anterior en GitHub Pages. Los libros y datos están en IndexedDB/localStorage del navegador.
