@@ -1,14 +1,12 @@
-# La Pulenta Biblioteca v0.5
-
-Evolución de la biblioteca personal digital.
+# La Pulenta Biblioteca v0.6
 
 ## Novedades
-- Colecciones personalizadas.
-- Un libro puede pertenecer a varias colecciones.
-- Crear colecciones desde la biblioteca o desde la ficha del libro.
-- Filtrar la biblioteca por colección.
-- Las colecciones se guardan localmente en el navegador.
-- Se mantienen PDF, EPUB, tags, favoritos, búsqueda, ordenamiento, portadas y lector EPUB/PDF de v0.4.3.
+- Nueva portada de biblioteca con estanterías visuales.
+- Colecciones destacadas como estanterías.
+- Sección de añadidos recientemente.
+- Sección de favoritos.
+- Ficha, tags, colecciones y lector EPUB/PDF de v0.5 conservados.
+- Compatible con los libros existentes en IndexedDB.
 
-## Importante
-Esta versión mantiene la misma IndexedDB (`biblioteca_lector`) y no borra los libros existentes.
+## Instalación
+Reemplaza los archivos del repositorio de GitHub Pages por los de esta versión. No es necesario volver a importar los libros.
