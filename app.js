@@ -274,25 +274,87 @@ function playerSplitText(text){
 async function extractEpubChapters(b){
   if(!b?.file)throw new Error('Este libro no tiene un archivo disponible.');
   if(typeof ePub!=='function')throw new Error('El motor EPUB no está disponible.');
+
+  // EPUB.js no garantiza que Section.contents exista hasta que esa sección
+  // haya pasado por una rendition. El lector normal de La Pulenta ya usa
+  // este mecanismo, así que El Pulento Player hace una rendition invisible
+  // para obtener exactamente el mismo texto que el usuario puede seleccionar.
   const engine=ePub();
   const buffer=await b.file.arrayBuffer();
   await engine.open(buffer,'binary');
   await engine.ready;
-  const items=engine.spine?.spineItems||[];
+
+  const holder=document.createElement('div');
+  holder.setAttribute('aria-hidden','true');
+  holder.style.cssText='position:fixed;left:-10000px;top:0;width:900px;height:700px;overflow:hidden;opacity:0;pointer-events:none;z-index:-1;';
+  document.body.appendChild(holder);
+
+  let rendition=null;
   const chapters=[];
-  for(let i=0;i<items.length;i++){
-    const item=items[i];
-    try{
-      const doc=await item.load(engine.load.bind(engine));
-      const root=doc?.body||doc?.documentElement;
-      const text=(root?.innerText||root?.textContent||'').replace(/\s+/g,' ').trim();
-      if(text)chapters.push({index:i,title:(item?.href||'').split('/').pop()?.replace(/\.[^.]+$/,'')||`Capítulo ${chapters.length+1}`,text,chunks:playerSplitText(text)});
-      try{item.unload()}catch(e){}
-    }catch(e){console.warn('Pulento Player: no pude leer sección',i,e)}
+  try{
+    rendition=engine.renderTo(holder,{
+      width:900,
+      height:700,
+      flow:'scrolled-doc',
+      manager:'default',
+      spread:'none',
+      allowScriptedContent:false
+    });
+
+    const items=(engine.spine?.spineItems||[]).filter(item=>item.linear!==false);
+    const toc=engine.navigation?.toc||[];
+
+    const cleanHref=value=>String(value||'').split('#')[0].replace(/^\.\//,'');
+    const tocLabelFor=item=>{
+      const href=cleanHref(item?.href);
+      const found=toc.find(t=>cleanHref(t?.href)===href || cleanHref(t?.href).endsWith(href) || href.endsWith(cleanHref(t?.href)));
+      return found?.label?.trim()||'';
+    };
+
+    for(let i=0;i<items.length;i++){
+      const item=items[i];
+      try{
+        // Mostrar la sección en la rendition invisible hace que EPUB.js
+        // construya item.contents y cargue el XHTML real.
+        await rendition.display(item.href);
+
+        const doc=item?.contents?.document || item?.document || null;
+        const root=doc?.body || doc?.documentElement || null;
+        let text='';
+        if(root){
+          text=(root.innerText||root.textContent||'').replace(/\s+/g,' ').trim();
+        }
+
+        // Fallback adicional: el contenido de la vista actualmente renderizada.
+        if(!text){
+          const contents=rendition.getContents?.()||[];
+          const current=contents[contents.length-1];
+          const currentRoot=current?.document?.body||current?.document?.documentElement||null;
+          if(currentRoot)text=(currentRoot.innerText||currentRoot.textContent||'').replace(/\s+/g,' ').trim();
+        }
+
+        if(text){
+          const filename=String(item?.href||'').split('/').pop()?.replace(/\.[^.]+$/,'')||`Capítulo ${chapters.length+1}`;
+          const tocTitle=tocLabelFor(item);
+          chapters.push({
+            index:i,
+            title:tocTitle||filename,
+            text,
+            chunks:playerSplitText(text)
+          });
+        }
+      }catch(e){
+        console.warn('Pulento Player: no pude renderizar sección',i,e);
+      }
+    }
+  }finally{
+    try{rendition?.destroy()}catch(e){}
+    try{engine.destroy()}catch(e){}
+    holder.remove();
   }
-  try{engine.destroy()}catch(e){}
-  if(!chapters.length)throw new Error('No encontré texto legible dentro de este EPUB.');
-  chapters.forEach((c,i)=>{if(!/^capítulo|chapter/i.test(c.title))c.title=`Capítulo ${i+1}`});
+
+  if(!chapters.length)throw new Error('No encontré texto legible dentro de este EPUB. El lector puede mostrarlo, pero el reproductor no logró extraer sus secciones.');
+  chapters.forEach((c,i)=>{if(!c.title||/^(x?html?|content|text|page)[-_]?\d*$/i.test(c.title))c.title=`Capítulo ${i+1}`});
   return chapters;
 }
 function playerLoadVoices(){
