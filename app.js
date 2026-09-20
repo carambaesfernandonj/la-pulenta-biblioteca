@@ -2,9 +2,8 @@ const DB_NAME = "biblioteca_lector";
 const DB_VERSION = 1;
 const STORE = "books";
 let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
-let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[], currentView="home";
-let readerFontSize=100, readerTheme="light";
 let currentPdfDoc=null, currentPdfPage=1, currentPdfScale=1, currentPdfSpread=false, currentPdfRenderToken=0;
+let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[], currentView="home";
 let collections=[];
 const COLLECTIONS_KEY="pulenta_collections_v1";
 if(window.pdfjsLib?.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -160,21 +159,18 @@ async function closeReader(){
   if(currentEpubRendition){try{currentEpubRendition.destroy()}catch(e){}}
   if(currentEpubBook){try{currentEpubBook.destroy()}catch(e){}}
   currentPdfDoc=null; currentPdfPage=1; currentPdfScale=1; currentPdfSpread=false; currentPdfRenderToken++;
-  currentEpubRendition=null;
-  currentEpubBook=null;
+  currentEpubRendition=null; currentEpubBook=null;
   if(currentEpubUrl){URL.revokeObjectURL(currentEpubUrl);currentEpubUrl=null}
   if(currentObjectUrl){URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=null}
-  $("#readerBody").innerHTML='';
-  $("#reader").classList.add('hidden');
-  $("#reader").classList.remove('pdf-mode');
-  $("#readerSettings").classList.add('hidden');
-  $("#tocPanel").classList.add('hidden');
-  currentBook=null
+  $("#readerBody").innerHTML=''; $("#reader").classList.add('hidden'); $("#reader").classList.remove('pdf-mode');
+  $("#readerSettings").classList.add('hidden'); $("#tocPanel").classList.add('hidden');
+  currentBook=null;
   try{renderLibrary(await getAllBooks())}catch(e){}
 }
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}
 async function openPdfReader(b){
-  if(!window.pdfjsLib) throw new Error('PDF.js no está disponible');
+  if(!window.pdfjsLib) throw new Error("PDF.js no está disponible");
+  if(!b?.file || typeof b.file.arrayBuffer!=="function") throw new Error("No se encontró el archivo PDF en el almacenamiento local");
   const buffer=await b.file.arrayBuffer();
   currentPdfDoc=await window.pdfjsLib.getDocument({data:buffer}).promise;
   currentPdfPage=Math.max(1,Math.min(currentPdfDoc.numPages,Number(b.pdfPage)||1));
@@ -185,10 +181,10 @@ async function openPdfReader(b){
 }
 function setPdfModeButtons(){
   const single=document.querySelector('#pdfSingleBtn'), dbl=document.querySelector('#pdfDoubleBtn');
-  if(single)single.classList.toggle('active',!currentPdfSpread);
-  if(dbl)dbl.classList.toggle('active',currentPdfSpread);
+  if(single) single.classList.toggle('active',!currentPdfSpread);
+  if(dbl) dbl.classList.toggle('active',currentPdfSpread);
 }
-async function renderPdfPage(pageNumber, holder){
+async function renderPdfPage(pageNumber,holder){
   if(!currentPdfDoc||pageNumber<1||pageNumber>currentPdfDoc.numPages)return;
   const page=await currentPdfDoc.getPage(pageNumber);
   const base=page.getViewport({scale:1});
@@ -200,21 +196,20 @@ async function renderPdfPage(pageNumber, holder){
   const viewport=page.getViewport({scale});
   const canvas=document.createElement('canvas');
   const dpr=Math.min(window.devicePixelRatio||1,2);
-  canvas.width=Math.ceil(viewport.width*dpr);canvas.height=Math.ceil(viewport.height*dpr);
-  canvas.style.width=Math.ceil(viewport.width)+'px';canvas.style.height=Math.ceil(viewport.height)+'px';
+  canvas.width=Math.ceil(viewport.width*dpr); canvas.height=Math.ceil(viewport.height*dpr);
+  canvas.style.width=Math.ceil(viewport.width)+'px'; canvas.style.height=Math.ceil(viewport.height)+'px';
   canvas.className='pdf-page-canvas';
   const ctx=canvas.getContext('2d');
   ctx.setTransform(dpr,0,0,dpr,0,0);
   await page.render({canvasContext:ctx,viewport}).promise;
-  const wrap=document.createElement('div');wrap.className='pdf-page-wrap';wrap.dataset.page=pageNumber;wrap.appendChild(canvas);holder.appendChild(wrap);
+  const wrap=document.createElement('div'); wrap.className='pdf-page-wrap'; wrap.dataset.page=pageNumber; wrap.appendChild(canvas); holder.appendChild(wrap);
 }
 async function renderPdfPages(){
   if(!currentPdfDoc)return;
   const token=++currentPdfRenderToken;
   const body=document.querySelector('#readerBody');
-  body.innerHTML='<div class="pdf-loading">Cargando página…</div>';
-  const holder=document.createElement('div');holder.className='pdf-reader-pages';
-  body.innerHTML='';body.appendChild(holder);
+  body.innerHTML='';
+  const holder=document.createElement('div'); holder.className='pdf-reader-pages'; body.appendChild(holder);
   try{
     await renderPdfPage(currentPdfPage,holder);
     if(token!==currentPdfRenderToken)return;
@@ -223,19 +218,19 @@ async function renderPdfPages(){
     const shown=currentPdfSpread?Math.min(currentPdfPage+1,currentPdfDoc.numPages):currentPdfPage;
     const pct=currentPdfDoc.numPages<=1?1:Math.max(0,Math.min(1,(shown-1)/(currentPdfDoc.numPages-1)));
     if(currentBook){
-      currentBook.pdfPage=currentPdfPage;
-      currentBook.pdfSpread=currentPdfSpread;
-      currentBook.progress=pct;
-      currentBook.updatedAt=Date.now();
-      await putBook(currentBook);
+      currentBook.pdfPage=currentPdfPage; currentBook.pdfSpread=currentPdfSpread; currentBook.progress=pct; currentBook.updatedAt=Date.now();
+      try{await putBook(currentBook)}catch(e){console.warn('No pude guardar progreso PDF',e)}
     }
     updateReaderInfo();
-    body.setAttribute('aria-label',`Página ${currentPdfPage}${currentPdfSpread&&shown!==currentPdfPage?` y ${shown}`:''} de ${currentPdfDoc.numPages}`);
-  }catch(e){console.error('PDF:',e);body.innerHTML='<div class="pdf-loading"><h3>No pude renderizar este PDF</h3><p>El archivo está en tu biblioteca, pero esta página no pudo renderizarse.</p><p class="book-meta">'+esc(e?.message||String(e))+'</p></div>'}
+    body.setAttribute('aria-label',`Página ${currentPdfPage}${currentPdfSpread&&shown!==currentPdfPage?' y '+shown:''} de ${currentPdfDoc.numPages}`);
+  }catch(e){
+    console.error('PDF:',e);
+    body.innerHTML='<div class="pdf-loading"><h3>No pude renderizar este PDF</h3><p>El archivo sigue guardado en tu biblioteca.</p><p class="book-meta">'+esc(e?.message||String(e))+'</p></div>';
+  }
 }
 async function pdfNext(){if(!currentPdfDoc)return;const step=currentPdfSpread?2:1;if(currentPdfPage>=currentPdfDoc.numPages)return;currentPdfPage=Math.min(currentPdfDoc.numPages,currentPdfPage+step);await renderPdfPages()}
 async function pdfPrev(){if(!currentPdfDoc)return;const step=currentPdfSpread?2:1;if(currentPdfPage<=1)return;currentPdfPage=Math.max(1,currentPdfPage-step);await renderPdfPages()}
-async function setPdfSpreadMode(on){currentPdfSpread=!!on;if(currentBook)currentBook.pdfSpread=currentPdfSpread;setPdfModeButtons();await renderPdfPages()}
+async function setPdfSpreadMode(on){currentPdfSpread=!!on;if(currentBook){currentBook.pdfSpread=currentPdfSpread;try{await putBook(currentBook)}catch(e){}}setPdfModeButtons();await renderPdfPages()}
 async function pdfZoom(delta){currentPdfScale=Math.max(.7,Math.min(2.4,currentPdfScale+delta));await renderPdfPages()}
 
 async function createEpubRendition(b, holder){
@@ -283,68 +278,22 @@ function updateReaderInfo(){
   if(!currentBook)return;
   const pct=Math.round((currentBook.progress||0)*100);
   $("#readerInfo").textContent=`${(currentBook.type||'pdf').toUpperCase()} · ${currentBook.source==='drive'?'Google Drive':'Dispositivo'} · ${pct}%`;
-  const bar=$("#readerProgressBar"), txt=$("#readerProgressText");
+  const bar=$("#readerProgressBar"),txt=$("#readerProgressText");
   if(bar)bar.style.width=Math.max(0,Math.min(100,pct))+"%";
   if(txt)txt.textContent=pct+"%";
 }
-function setupReaderTheme(){
-  if(!currentEpubRendition)return;
-  try{
-    currentEpubRendition.themes.register('pulenta-light',{body:{color:'#29251f !important',background:'#f7f1e5 !important'}});
-    currentEpubRendition.themes.register('pulenta-sepia',{body:{color:'#4a3b2a !important',background:'#f1e3c5 !important'}});
-    currentEpubRendition.themes.register('pulenta-dark',{body:{color:'#e8e0d3 !important',background:'#24211d !important'}});
-    currentEpubRendition.themes.select('pulenta-'+readerTheme);
-    currentEpubRendition.themes.fontSize(readerFontSize+'%');
-  }catch(e){console.warn('Tema EPUB:',e)}
-}
-function renderToc(){
-  const list=$("#tocList"); if(!list||!currentEpubBook)return;
-  let toc=[]; try{toc=currentEpubBook.navigation?.toc||[]}catch(e){}
-  const flatten=(items,out=[])=>{(items||[]).forEach(i=>{out.push(i);if(i.subitems)flatten(i.subitems,out)});return out};
-  toc=flatten(toc);
-  if(!toc.length){list.innerHTML='<p class="book-meta" style="padding:12px">Este EPUB no proporciona un índice navegable.</p>';return}
-  list.innerHTML=toc.map((i,n)=>`<button class="toc-item" type="button" data-href="${esc(i.href||'')}" data-index="${n}">${esc(i.label||('Capítulo '+(n+1)))}</button>`).join('');
-  list.querySelectorAll('.toc-item').forEach(btn=>btn.onclick=async()=>{try{await currentEpubRendition.display(btn.dataset.href);$("#tocPanel").classList.add('hidden')}catch(e){console.warn(e)}});
-}
-function applyReaderTheme(theme){readerTheme=theme||'light';setupReaderTheme();document.querySelectorAll('[data-theme]').forEach(b=>b.classList.toggle('active',b.dataset.theme===readerTheme))}
-function applyReaderFont(delta){readerFontSize=Math.max(80,Math.min(160,readerFontSize+delta));if(currentEpubRendition)try{currentEpubRendition.themes.fontSize(readerFontSize+'%')}catch(e){}}
-async function toggleBookmark(){if(!currentBook||!currentEpubRendition)return;const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(!cfi)return;currentBook.bookmarkCfi=cfi;currentBook.updatedAt=Date.now();await putBook(currentBook);$("#bookmarkBtn").textContent='🔖 Marcado';toast('Posición marcada.')}
 async function openBook(id,books){
-  const b=(books||await getAllBooks()).find(x=>x.id===id);if(!b)return;
-  // Registrar que el usuario abrió este libro para que aparezca en Lecturas actuales.
-  b.lastOpenedAt=Date.now();
-  b.updatedAt=b.lastOpenedAt;
+  const b=(books||await getAllBooks()).find(x=>x.id===id); if(!b)return;
+  b.lastOpenedAt=Date.now(); b.updatedAt=b.lastOpenedAt;
   try{await putBook(b)}catch(e){console.warn('No pude registrar la lectura actual',e)}
-  currentBook=b;
-  $("#readerTitle").textContent=b.title;
-  $("#reader").classList.toggle('pdf-mode',b.type==='pdf');
-  $("#readerSettings").classList.add('hidden');
-  $("#tocPanel").classList.add('hidden');
-  $("#bookmarkBtn").textContent=b.bookmarkCfi?'🔖 Marcado':'🔖 Marcar';
-  updateReaderInfo();
-  $("#readerBody").innerHTML='';
-  $("#reader").classList.remove('hidden');
+  currentBook=b; $("#readerTitle").textContent=b.title; $("#reader").classList.toggle('pdf-mode',b.type==='pdf');
+  $("#readerSettings").classList.add('hidden'); $("#tocPanel").classList.add('hidden'); $("#readerBody").innerHTML=''; $("#reader").classList.remove('hidden'); updateReaderInfo();
   if(b.type==='pdf'){
     try{await openPdfReader(b)}catch(e){console.error('PDF:',e);$("#readerBody").innerHTML=`<div class="pdf-loading"><h3>No pude abrir este PDF</h3><p>El archivo está guardado en la biblioteca, pero el lector PDF no pudo iniciarse.</p><p class="book-meta">Detalle técnico: ${esc(e?.message||String(e))}</p></div>`}
   }else{
-    if(typeof ePub!=='function'){
-      $("#readerBody").innerHTML='<div class="epub-reader epub-error"><h3>No se pudo cargar el motor EPUB</h3><p>Revisa tu conexión a internet y vuelve a abrir la app.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';
-      return;
-    }
-    const holder=document.createElement('div');
-    holder.className='epub-reader';
-    $("#readerBody").appendChild(holder);
-    try{
-      await nextFrame();
-      await createEpubRendition(b,holder);
-      setupReaderTheme();
-      renderToc();
-      if(b.bookmarkCfi){/* El progreso sigue siendo la posición de lectura; el marcador queda disponible como referencia. */}
-    }catch(e){
-      console.error('EPUB:',e);
-      const detail=esc(e?.message||String(e)||'Error desconocido');
-      $("#readerBody").innerHTML=`<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero el lector no pudo interpretar su contenido.</p><p class="book-meta">Detalle técnico: ${detail}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;
-    }
+    if(typeof ePub!=='function'){$("#readerBody").innerHTML='<div class="epub-reader epub-error"><h3>No se pudo cargar el motor EPUB</h3><p>Revisa tu conexión a internet y vuelve a abrir la app.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';return}
+    const holder=document.createElement('div'); holder.className='epub-reader'; $("#readerBody").appendChild(holder);
+    try{await nextFrame();await createEpubRendition(b,holder)}catch(e){console.error('EPUB:',e);const detail=esc(e?.message||String(e)||'Error desconocido');$("#readerBody").innerHTML=`<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero el lector no pudo interpretar su contenido.</p><p class="book-meta">Detalle técnico: ${detail}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`}
   }
 }
 function wait(ms){return new Promise(r=>setTimeout(r,ms))}
@@ -372,29 +321,22 @@ document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$("#bookM
 (async()=>{try{loadCollections();await openDB();renderLibrary(await getAllBooks())}catch(e){console.error(e);toast('No se pudo iniciar la biblioteca en este navegador.')}})();
 
 
-// Controles del lector definitivo
+// Controles del lector: PDF y EPUB comparten la misma interfaz.
 const prevPageBtn=$("#prevPageBtn"), nextPageBtn=$("#nextPageBtn");
-if(prevPageBtn) prevPageBtn.onclick=async()=>{if(currentBook?.type==='pdf')await pdfPrev();else if(currentEpubRendition){try{await currentEpubRendition.prev()}catch(e){console.warn(e)}}};
-if(nextPageBtn) nextPageBtn.onclick=async()=>{if(currentBook?.type==='pdf')await pdfNext();else if(currentEpubRendition){try{await currentEpubRendition.next()}catch(e){console.warn(e)}}};
-$('#pdfSingleBtn').onclick=()=>setPdfSpreadMode(false);
-$('#pdfDoubleBtn').onclick=()=>setPdfSpreadMode(true);
-$('#pdfZoomOut').onclick=()=>pdfZoom(-.15);
-$('#pdfZoomIn').onclick=()=>pdfZoom(.15);
-$("#readerSettingsBtn").onclick=()=>$("#readerSettings").classList.toggle('hidden');
-$("#fontDown").onclick=()=>applyReaderFont(-10);
-$("#fontUp").onclick=()=>applyReaderFont(10);
-document.querySelectorAll('[data-theme]').forEach(b=>b.onclick=()=>applyReaderTheme(b.dataset.theme));
-$("#tocBtn").onclick=()=>$("#tocPanel").classList.toggle('hidden');
-$("#closeToc").onclick=()=>$("#tocPanel").classList.add('hidden');
-$("#bookmarkBtn").onclick=toggleBookmark;
-$("#fullscreenBtn").onclick=async()=>{try{if(!document.fullscreenElement)await $("#reader").requestFullscreen();else await document.exitFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
+if(prevPageBtn)prevPageBtn.onclick=async()=>{if(currentBook?.type==='pdf')await pdfPrev();else if(currentEpubRendition)try{await currentEpubRendition.prev()}catch(e){console.warn(e)}};
+if(nextPageBtn)nextPageBtn.onclick=async()=>{if(currentBook?.type==='pdf')await pdfNext();else if(currentEpubRendition)try{await currentEpubRendition.next()}catch(e){console.warn(e)}};
+if($("#pdfSingleBtn"))$("#pdfSingleBtn").onclick=()=>setPdfSpreadMode(false);
+if($("#pdfDoubleBtn"))$("#pdfDoubleBtn").onclick=()=>setPdfSpreadMode(true);
+if($("#pdfZoomOut"))$("#pdfZoomOut").onclick=()=>pdfZoom(-.15);
+if($("#pdfZoomIn"))$("#pdfZoomIn").onclick=()=>pdfZoom(.15);
+if($("#fullscreenBtn"))$("#fullscreenBtn").onclick=async()=>{try{if(!document.fullscreenElement)await $("#reader").requestFullscreen();else await document.exitFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
 document.addEventListener('fullscreenchange',()=>$("#reader").classList.toggle('reader-fullscreen',!!document.fullscreenElement));
+let pdfTouchStartX=0;
+$("#readerBody").addEventListener('touchstart',e=>{if(currentBook?.type==='pdf'&&e.touches[0])pdfTouchStartX=e.touches[0].clientX},{passive:true});
+$("#readerBody").addEventListener('touchend',async e=>{if(currentBook?.type!=='pdf'||!e.changedTouches[0])return;const dx=e.changedTouches[0].clientX-pdfTouchStartX;if(Math.abs(dx)>50){if(dx<0)await pdfNext();else await pdfPrev()}},{passive:true});
+window.addEventListener('resize',()=>{if(currentBook?.type==='pdf'&&!$("#reader").classList.contains('hidden'))renderPdfPages()});
 document.addEventListener('keydown',async e=>{
   if($("#reader").classList.contains('hidden'))return;
   if(e.key==='ArrowRight'||e.key==='PageDown'){e.preventDefault();if(currentBook?.type==='pdf')await pdfNext();else if(currentEpubRendition)try{await currentEpubRendition.next()}catch(err){console.warn(err)}}
   if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();if(currentBook?.type==='pdf')await pdfPrev();else if(currentEpubRendition)try{await currentEpubRendition.prev()}catch(err){console.warn(err)}}
 });
-let pdfTouchStartX=0;
-$('#readerBody').addEventListener('touchstart',e=>{if(currentBook?.type==='pdf'&&e.touches[0])pdfTouchStartX=e.touches[0].clientX},{passive:true});
-$('#readerBody').addEventListener('touchend',async e=>{if(currentBook?.type!=='pdf'||!e.changedTouches[0])return;const dx=e.changedTouches[0].clientX-pdfTouchStartX;if(Math.abs(dx)>50){if(dx<0)await pdfNext();else await pdfPrev()}},{passive:true});
-window.addEventListener('resize',()=>{if(currentBook?.type==='pdf'&&!$('#reader').classList.contains('hidden'))renderPdfPages()});
