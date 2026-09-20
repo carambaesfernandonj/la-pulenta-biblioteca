@@ -18,7 +18,7 @@
     <nav class="main-nav" aria-label="Navegación principal">
       <button class="nav-btn active" data-view="home" type="button">🏠 Inicio</button>
       <button class="nav-btn" data-view="collections" type="button">📚 Colecciones</button>
-      <button class="nav-btn" data-view="library" type="button">🗂 Biblioteca</button>
+      <button class="nav-btn" data-view="library" type="button">🗂 Biblioteca</button><button class="nav-btn" data-view="player" type="button">🎧 El Pulento Player</button>
     </nav>
     <div class="theme-wrap"><button id="themeToggle" class="secondary theme-toggle" type="button" title="Cambiar modo de biblioteca">🌙 Modo oscuro</button><button id="settingsBtn" class="secondary theme-toggle" type="button" title="Ajustes y respaldo">⚙️ Ajustes</button></div>
     <div class="add-wrap">
@@ -60,6 +60,29 @@
         <p>Crea una para empezar a ordenar tus libros como quieras.</p>
         <button id="newCollectionEmptyBtn" class="primary" type="button">＋ Crear colección</button>
       </div>
+    </section>
+
+    <section id="viewPlayer" class="app-view hidden">
+      <section class="page-intro player-intro">
+        <div><span class="eyebrow">ESCUCHA TU BIBLIOTECA</span><h2>🎧 El Pulento Player</h2><p>Lee y escucha tus EPUB como un mismo libro. El audio se genera en tiempo real con la voz de tu dispositivo.</p></div>
+      </section>
+      <section class="player-layout">
+        <div class="player-book-list">
+          <div class="player-list-head"><strong>Mis libros para escuchar</strong><span id="playerBookCount">0</span></div>
+          <div id="playerBookList" class="player-book-list-items"></div>
+        </div>
+        <div class="player-main">
+          <div id="playerEmpty" class="player-empty"><div class="empty-icon">🎧</div><h3>Elige un libro</h3><p>Selecciona un EPUB de tu biblioteca para comenzar a escucharlo.</p></div>
+          <div id="playerNow" class="player-now hidden">
+            <div id="playerCover" class="player-cover"></div>
+            <div class="player-copy"><span class="eyebrow">REPRODUCIENDO</span><h2 id="playerTitle">—</h2><p id="playerAuthor">—</p><div class="player-chapter"><strong id="playerChapter">—</strong><span id="playerChapterMeta">—</span></div></div>
+            <div class="player-progress"><div class="player-progress-head"><span id="playerTimeLabel">0%</span><span id="playerPercentLabel">0%</span></div><div class="player-progress-track"><span id="playerProgressBar"></span></div></div>
+            <div class="player-controls"><button id="playerPrevBtn" class="secondary player-round" type="button">⏮</button><button id="playerBackBtn" class="secondary player-round" type="button">↶ 15s aprox.</button><button id="playerPlayBtn" class="primary player-play" type="button">▶</button><button id="playerForwardBtn" class="secondary player-round" type="button">15s aprox. ↷</button><button id="playerNextBtn" class="secondary player-round" type="button">⏭</button></div>
+            <div class="player-options"><label>Voz<select id="playerVoiceSelect"></select></label><label>Velocidad<select id="playerRateSelect"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="1.75">1.75×</option><option value="2">2×</option></select></label><button id="playerStopBtn" class="secondary" type="button">⏹ Detener</button></div>
+            <div id="playerSupportNote" class="player-note"></div>
+          </div>
+        </div>
+      </section>
     </section>
 
     <section id="viewLibrary" class="app-view hidden">

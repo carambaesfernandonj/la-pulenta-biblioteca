@@ -4,6 +4,10 @@ const STORE = "books";
 let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
 let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[], currentView="home";
 let collections=[];
+let playerState={book:null,bookEngine:null,chapters:[],chapterIndex:0,chunkIndex:0,chunks:[],speaking:false,paused:false,voices:[],rate:1,startedAt:0,chunkStartedAt:0};
+let playerUtterance=null;
+const PLAYER_CHUNK_MAX=180;
+
 let batchCollectionName=null,batchBooks=[],batchSelected=new Set();
 const COLLECTIONS_KEY="pulenta_collections_v1";
 if(window.pdfjsLib?.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -229,11 +233,12 @@ async function deleteCollection(name){
 async function showView(view){
   currentView=view;
   try{if(view==='home'||view==='collections') renderLibrary(await getAllBooks())}catch(e){}
-  ["home","collections","library"].forEach(v=>$("#view"+v.charAt(0).toUpperCase()+v.slice(1))?.classList.toggle('hidden',v!==view));
+  ["home","collections","library","player"].forEach(v=>$("#view"+v.charAt(0).toUpperCase()+v.slice(1))?.classList.toggle('hidden',v!==view));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   if(view==='home') window.scrollTo({top:0,behavior:'smooth'});
   if(view==='collections') window.scrollTo({top:0,behavior:'smooth'});
   if(view==='library') window.scrollTo({top:0,behavior:'smooth'});
+  if(view==='player'){await showPlayer();window.scrollTo({top:0,behavior:'smooth'});}
 }
 function renderLibrary(all){const shown=filtered(all);renderHomeDashboard(all);renderCollectionsPage(all);$("#stats").textContent=`${all.length} libro${all.length===1?'':'s'}`;$("#emptyState").classList.toggle('hidden',all.length!==0);$("#noResults").classList.toggle('hidden',!all.length||shown.length!==0);$("#libraryGrid").classList.toggle('list-view',viewMode==='list');renderCollectionBar(all);renderTagBar(all);renderCollectionSummary(all,shown);$("#libraryGrid").innerHTML=shown.map(b=>`<button class="book" data-id="${b.id}" type="button">${coverFor(b)}<div class="book-content"><div class="book-title">${esc(b.title)}</div><div class="book-author">${esc(b.author||'Sin autor')}</div><div class="book-meta">${(b.type||'pdf').toUpperCase()} · ${Math.round((b.progress||0)*100)}%</div><div class="progress"><span style="width:${Math.max(0,Math.min(100,(b.progress||0)*100))}%"></span></div><div class="book-meta tags">${(b.tags||[]).slice(0,4).map(t=>'#'+esc(t)).join(' ')}</div></div></button>`).join('');$("#libraryGrid").querySelectorAll('.book').forEach(x=>x.onclick=()=>openBookDetails(x.dataset.id))}
 function renderContinue(all){const candidates=all.filter(b=>(b.progress||0)>0).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const b=candidates[0];$("#continueSection").classList.toggle('hidden',!b);if(!b)return;$("#continueTitle").textContent=b.title;$("#continueMeta").textContent=`${Math.round(b.progress*100)}% leído · ${(b.type||'pdf').toUpperCase()}${b.author?' · '+b.author:''}`;$("#continueCover").innerHTML=coverFor(b,true);$("#continueBtn").onclick=()=>openBook(b.id,all)}
@@ -252,6 +257,122 @@ async function deleteCurrentBook(){if(!modalBook)return;const name=modalBook.tit
 function closeBookDetails(){$("#bookModal").classList.add('hidden');modalBook=null;modalTags=[]}
 async function saveBookDetails(){if(!modalBook)return;modalBook.title=$("#editTitle").value.trim()||modalBook.title;modalBook.author=$("#editAuthor").value.trim();modalBook.tags=[...new Set(modalTags.map(normTag).filter(Boolean))];modalBook.collections=[...new Set((modalBook.collections||[]).filter(c=>collections.includes(c)))];modalBook.updatedAt=Date.now();await putBook(modalBook);closeBookDetails();renderLibrary(await getAllBooks());toast('Cambios guardados.')}
 function fileUrl(f){if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=URL.createObjectURL(f);return currentObjectUrl}
+function playerSupported(){return 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window}
+function playerSplitText(text){
+  const clean=String(text||'').replace(/\s+/g,' ').trim();
+  if(!clean)return [];
+  const parts=clean.split(/(?<=[.!?…])\s+/);
+  const out=[]; let buf='';
+  for(const part of parts){
+    if(!part)continue;
+    if((buf+' '+part).trim().length<=PLAYER_CHUNK_MAX){buf=(buf+' '+part).trim()}
+    else{if(buf)out.push(buf);buf=part}
+  }
+  if(buf)out.push(buf);
+  return out;
+}
+async function extractEpubChapters(b){
+  if(!b?.file)throw new Error('Este libro no tiene un archivo disponible.');
+  if(typeof ePub!=='function')throw new Error('El motor EPUB no está disponible.');
+  const engine=ePub();
+  const buffer=await b.file.arrayBuffer();
+  await engine.open(buffer,'binary');
+  await engine.ready;
+  const items=engine.spine?.spineItems||[];
+  const chapters=[];
+  for(let i=0;i<items.length;i++){
+    const item=items[i];
+    try{
+      const doc=await item.load(engine.load.bind(engine));
+      const root=doc?.body||doc?.documentElement;
+      const text=(root?.innerText||root?.textContent||'').replace(/\s+/g,' ').trim();
+      if(text)chapters.push({index:i,title:(item?.href||'').split('/').pop()?.replace(/\.[^.]+$/,'')||`Capítulo ${chapters.length+1}`,text,chunks:playerSplitText(text)});
+      try{item.unload()}catch(e){}
+    }catch(e){console.warn('Pulento Player: no pude leer sección',i,e)}
+  }
+  try{engine.destroy()}catch(e){}
+  if(!chapters.length)throw new Error('No encontré texto legible dentro de este EPUB.');
+  chapters.forEach((c,i)=>{if(!/^capítulo|chapter/i.test(c.title))c.title=`Capítulo ${i+1}`});
+  return chapters;
+}
+function playerLoadVoices(){
+  if(!playerSupported())return;
+  const fill=()=>{
+    playerState.voices=speechSynthesis.getVoices()||[];
+    const sel=$('#playerVoiceSelect');if(!sel)return;
+    const prev=sel.value;
+    const voices=playerState.voices;
+    sel.innerHTML=voices.length?voices.map((v,i)=>`<option value="${i}">${esc(v.name)} — ${esc(v.lang)}</option>`).join(''):'<option value="">Voz del dispositivo</option>';
+    const preferred=voices.findIndex(v=>/^es(-|_|$)/i.test(v.lang));
+    sel.value=prev&&voices[+prev]?prev:(preferred>=0?String(preferred):(voices.length?'0':''));
+  };
+  fill(); speechSynthesis.onvoiceschanged=fill;
+}
+function playerSetUI(){
+  const b=playerState.book;if(!b)return;
+  $('#playerTitle').textContent=b.title||b.fileName||'Sin título';
+  $('#playerAuthor').textContent=b.author||'Sin autor';
+  $('#playerCover').innerHTML=b.coverData?`<img src="${b.coverData}" alt="Portada de ${esc(b.title)}">`:coverFor(b,true);
+  const ch=playerState.chapters[playerState.chapterIndex];
+  $('#playerChapter').textContent=ch?.title||'—';
+  $('#playerChapterMeta').textContent=ch?`Capítulo ${playerState.chapterIndex+1} de ${playerState.chapters.length}`:'—';
+  const total=playerState.chapters.reduce((n,c)=>n+c.chunks.length,0)||1;
+  const done=playerState.chapters.slice(0,playerState.chapterIndex).reduce((n,c)=>n+c.chunks.length,0)+playerState.chunkIndex;
+  const pct=Math.max(0,Math.min(1,done/total));
+  $('#playerProgressBar').style.width=Math.round(pct*100)+'%';
+  $('#playerPercentLabel').textContent=Math.round(pct*100)+'%';
+  $('#playerTimeLabel').textContent=playerState.speaking?(playerState.paused?'Pausado':'Reproduciendo'):'Listo';
+  $('#playerPlayBtn').textContent=playerState.speaking&&!playerState.paused?'⏸':'▶';
+}
+async function playerPersist(){
+  const b=playerState.book;if(!b)return;
+  b.audioChapter=playerState.chapterIndex;b.audioChunk=playerState.chunkIndex;
+  const total=playerState.chapters.reduce((n,c)=>n+c.chunks.length,0)||1;
+  const done=playerState.chapters.slice(0,playerState.chapterIndex).reduce((n,c)=>n+c.chunks.length,0)+playerState.chunkIndex;
+  b.audioProgress=Math.max(0,Math.min(1,done/total));b.updatedAt=Date.now();
+  try{await putBook(b)}catch(e){console.warn('No pude guardar progreso de audio',e)}
+}
+function playerCancelSpeech(){if(playerSupported())speechSynthesis.cancel();playerUtterance=null;playerState.speaking=false;playerState.paused=false}
+async function playerSpeakCurrent(){
+  if(!playerSupported()){toast('Este navegador no ofrece Text-to-Speech.');return}
+  const ch=playerState.chapters[playerState.chapterIndex];
+  if(!ch)return;
+  if(playerState.chunkIndex>=ch.chunks.length){if(playerState.chapterIndex<playerState.chapters.length-1){playerState.chapterIndex++;playerState.chunkIndex=0;return playerSpeakCurrent()}playerState.speaking=false;playerState.paused=false;await playerPersist();playerSetUI();toast('Terminaste el libro. 🎉');return}
+  playerCancelSpeech();
+  const text=ch.chunks[playerState.chunkIndex];
+  const u=new SpeechSynthesisUtterance(text);playerUtterance=u;
+  const sel=$('#playerVoiceSelect');const voice=playerState.voices[Number(sel?.value)];if(voice)u.voice=voice;u.rate=Number($('#playerRateSelect')?.value||1);u.pitch=1;u.volume=1;
+  u.onstart=()=>{playerState.speaking=true;playerState.paused=false;playerState.chunkStartedAt=Date.now();playerSetUI()};
+  u.onpause=()=>{playerState.paused=true;playerSetUI()};
+  u.onresume=()=>{playerState.paused=false;playerSetUI()};
+  u.onerror=e=>{console.warn('Pulenta TTS:',e);playerState.speaking=false;playerState.paused=false;playerSetUI();toast('La voz del dispositivo tuvo un problema.')};
+  u.onend=async()=>{if(playerUtterance!==u)return;playerState.chunkIndex++;await playerPersist();playerSetUI();if(playerState.speaking!==false)await playerSpeakCurrent()};
+  playerState.speaking=true;playerState.paused=false;playerSetUI();speechSynthesis.speak(u);
+}
+async function playerToggle(){
+  if(!playerState.book)return;
+  if(!playerSupported()){toast('Este navegador no ofrece Text-to-Speech.');return}
+  if(playerState.speaking){if(playerState.paused){speechSynthesis.resume()}else{speechSynthesis.pause()}return}
+  await playerSpeakCurrent();
+}
+async function playerLoadBook(id){
+  playerCancelSpeech();
+  const books=await getAllBooks();const b=books.find(x=>x.id===id);if(!b)return;
+  if(b.type!=='epub'){toast('El Pulento Player comenzará con EPUB. PDF llegará en una siguiente etapa.');return}
+  $('#playerEmpty').classList.add('hidden');$('#playerNow').classList.remove('hidden');$('#playerChapter').textContent='Preparando texto…';$('#playerChapterMeta').textContent='';
+  playerState={...playerState,book:b,bookEngine:null,chapters:[],chapterIndex:Math.max(0,b.audioChapter||0),chunkIndex:Math.max(0,b.audioChunk||0),speaking:false,paused:false};
+  try{playerState.chapters=await extractEpubChapters(b);playerState.chapterIndex=Math.min(playerState.chapterIndex,playerState.chapters.length-1);playerState.chunkIndex=Math.min(playerState.chunkIndex,Math.max(0,playerState.chapters[playerState.chapterIndex].chunks.length-1));playerSetUI();await playerPersist()}catch(e){console.error(e);$('#playerNow').classList.add('hidden');$('#playerEmpty').classList.remove('hidden');toast('No pude preparar este EPUB para escucharlo.')}
+}
+async function showPlayer(){
+  showView('player');
+  const books=await getAllBooks();const epubs=books.filter(b=>b.type==='epub');
+  $('#playerBookCount').textContent=String(epubs.length);
+  $('#playerBookList').innerHTML=epubs.length?epubs.map(b=>`<button class="player-book-item ${playerState.book?.id===b.id?'active':''}" data-player-id="${esc(b.id)}" type="button"><span class="player-mini-cover">${b.coverData?`<img src="${b.coverData}" alt="">`:'📖'}</span><span><strong>${esc(b.title)}</strong><small>${esc(b.author||'Sin autor')} · ${Math.round((b.audioProgress||0)*100)}% escuchado</small></span></button>`).join(''):'<div class="player-list-empty">No tienes EPUB todavía.<br>Añade un EPUB a tu biblioteca y aparecerá aquí.</div>';
+  $('#playerBookList').querySelectorAll('[data-player-id]').forEach(x=>x.onclick=()=>playerLoadBook(x.dataset.playerId));
+  if(playerState.book&&playerState.chapters.length)playerSetUI();
+  playerLoadVoices();
+  $('#playerSupportNote').textContent=playerSupported()?'Las voces dependen del navegador y del dispositivo. No se genera ni se guarda ningún archivo de audio.':'Este navegador no ofrece SpeechSynthesis. Prueba con un navegador moderno con voces del sistema.';
+}
 async function closeReader(){
   if(currentBook){try{await putBook(currentBook)}catch(e){}}
   if(currentEpubRendition){try{currentEpubRendition.destroy()}catch(e){}}
@@ -425,6 +546,16 @@ $("#batchClear").onclick=()=>{batchSelected.clear();renderBatchList()};
 $("#collectionBatchModal").onclick=e=>{if(e.target===$("#collectionBatchModal"))closeBatchCollection()};
 $("#showCollectionsBtn").onclick=async()=>{const b=$("#collectionBar");if(b.classList.contains('hidden'))renderCollectionBar(await getAllBooks());else{activeCollection=null;renderLibrary(await getAllBooks())}};
 document.querySelectorAll(".nav-btn").forEach(b=>b.onclick=()=>showView(b.dataset.view));
+// Pulento Player
+$("#playerPlayBtn")?.addEventListener('click',playerToggle);
+$("#playerStopBtn")?.addEventListener('click',()=>{playerCancelSpeech();playerSetUI()});
+$("#playerPrevBtn")?.addEventListener('click',async()=>{if(!playerState.book)return;playerCancelSpeech();if(playerState.chapterIndex>0){playerState.chapterIndex--;playerState.chunkIndex=0;await playerPersist();playerSetUI()}});
+$("#playerNextBtn")?.addEventListener('click',async()=>{if(!playerState.book)return;playerCancelSpeech();if(playerState.chapterIndex<playerState.chapters.length-1){playerState.chapterIndex++;playerState.chunkIndex=0;await playerPersist();playerSetUI()}else{playerState.chunkIndex=playerState.chapters[playerState.chapterIndex]?.chunks.length||0;await playerPersist();playerSetUI()}});
+$("#playerBackBtn")?.addEventListener('click',async()=>{if(!playerState.book)return;playerCancelSpeech();playerState.chunkIndex=Math.max(0,playerState.chunkIndex-1);await playerSpeakCurrent()});
+$("#playerForwardBtn")?.addEventListener('click',async()=>{if(!playerState.book)return;playerCancelSpeech();const ch=playerState.chapters[playerState.chapterIndex];if(ch)playerState.chunkIndex=Math.min(ch.chunks.length,playerState.chunkIndex+1);await playerSpeakCurrent()});
+$("#playerRateSelect")?.addEventListener('change',()=>{if(playerState.speaking){playerCancelSpeech();playerSpeakCurrent()} });
+$("#playerVoiceSelect")?.addEventListener('change',()=>{if(playerState.speaking){playerCancelSpeech();playerSpeakCurrent()} });
+
 $("#homeLibraryBtn").onclick=()=>showView("library");
 $("#newCollectionPageBtn").onclick=()=>createCollectionPrompt();
 $("#newCollectionEmptyBtn").onclick=()=>createCollectionPrompt();
