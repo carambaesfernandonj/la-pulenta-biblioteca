@@ -1,5 +1,5 @@
 const DB_NAME = "biblioteca_lector";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = "books";
 let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
 let currentPdfDoc=null, currentPdfPage=1, currentPdfScale=1, currentPdfSpread=false, currentPdfRenderToken=0;
@@ -10,8 +10,20 @@ if(window.pdfjsLib?.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.wor
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 function toast(m){const e=$("#toast");e.textContent=m;e.classList.add("show");clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove("show"),2400)}
-function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,DB_VERSION);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE,{keyPath:"id"})};r.onsuccess=()=>{db=r.result;res(db)};r.onerror=()=>rej(r.error)})}
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,DB_VERSION);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:"id"});if(!d.objectStoreNames.contains("bookFiles"))d.createObjectStore("bookFiles",{keyPath:"id"})};r.onsuccess=()=>{db=r.result;res(db)};r.onerror=()=>rej(r.error)})}
 function tx(m="readonly"){return db.transaction(STORE,m).objectStore(STORE)}
+function fileTx(m="readonly"){return db.transaction("bookFiles",m).objectStore("bookFiles")}
+function putFileData(id,buffer,mime){return new Promise((res,rej)=>{const r=fileTx("readwrite").put({id,buffer,mime:mime||"application/octet-stream"});r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function deleteFileData(id){return new Promise((res,rej)=>{const r=fileTx("readwrite").delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function getFileData(id){return new Promise((res,rej)=>{const r=fileTx().get(id);r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}
+function asArrayBuffer(file){if(file instanceof ArrayBuffer)return Promise.resolve(file);if(file&&typeof file.arrayBuffer==="function")return file.arrayBuffer();throw new Error("El archivo no tiene datos legibles")}
+async function getBookFile(b){if(b?.file)return b.file;if(!b?.fileKey)throw new Error("No se encontró el archivo en el almacenamiento local");const rec=await getFileData(b.fileKey);if(!rec?.buffer)throw new Error("No se encontró el archivo en el almacenamiento local");return new Blob([rec.buffer],{type:rec.mime||((b.type==='epub')?'application/epub+zip':'application/pdf')})}
+function fileTx(m="readonly"){return db.transaction("bookFiles",m).objectStore("bookFiles")}
+function putFileData(id,buffer,mime){return new Promise((res,rej)=>{const r=fileTx("readwrite").put({id,buffer,mime:mime||"application/octet-stream"});r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function deleteFileData(id){return new Promise((res,rej)=>{const r=fileTx("readwrite").delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function getFileData(id){return new Promise((res,rej)=>{const r=fileTx().get(id);r.onsuccess=()=>res(r.result||null);r.onerror=()=>rej(r.error)})}
+function asArrayBuffer(file){if(file instanceof ArrayBuffer)return Promise.resolve(file);if(file&&typeof file.arrayBuffer==="function")return file.arrayBuffer();throw new Error("El archivo no tiene datos legibles")}
+async function getBookFile(b){if(b?.file)return b.file;if(!b?.fileKey)throw new Error("No se encontró el archivo en el almacenamiento local");const rec=await getFileData(b.fileKey);if(!rec?.buffer)throw new Error("No se encontró el archivo en el almacenamiento local");return new Blob([rec.buffer],{type:rec.mime||((b.type==='epub')?'application/epub+zip':'application/pdf')})}
 function getAllBooks(){return new Promise((res,rej)=>{const r=tx().getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 function putBook(b){return new Promise((res,rej)=>{const r=tx("readwrite").put(b);r.onsuccess=res;r.onerror=()=>rej(r.error)})}
 function makeId(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)}
@@ -23,7 +35,7 @@ function collectionLabel(c){return String(c||'').replace(/\s+/g,' ').trim()}
 async function extractEpubMetadata(file){
   if(!file||typeof JSZip==='undefined') return {};
   try{
-    const zip=await JSZip.loadAsync(file);
+    const zip=await JSZip.loadAsync(await asArrayBuffer(file));
     const container=await zip.file('META-INF/container.xml')?.async('text');
     if(!container)return {};
     const rootfile=(container.match(/full-path=["']([^"']+)["']/i)||[])[1];
@@ -48,9 +60,9 @@ async function extractEpubMetadata(file){
 }
 async function extractPdfMetadata(file){
   if(!file||!window.pdfjsLib)return {};
-  try{const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const m=await pdf.getMetadata();const info=m?.info||{};return {title:info.Title||'',author:info.Author||'',language:info.Language||'',publisher:info.Producer||'',description:info.Subject||''}}catch(e){return {}}
+  try{const pdf=await window.pdfjsLib.getDocument({data:await asArrayBuffer(file)}).promise;const m=await pdf.getMetadata();const info=m?.info||{};return {title:info.Title||'',author:info.Author||'',language:info.Language||'',publisher:info.Producer||'',description:info.Subject||''}}catch(e){return {}}
 }
-async function generatePdfCover(file){if(!window.pdfjsLib||!file)return null;try{const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const p=await pdf.getPage(1),base=p.getViewport({scale:1}),vp=p.getViewport({scale:520/base.height}),c=document.createElement('canvas');c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);await p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;return c.toDataURL('image/jpeg',.78)}catch(e){console.warn(e);return null}}
+async function generatePdfCover(file){if(!window.pdfjsLib||!file)return null;try{const pdf=await window.pdfjsLib.getDocument({data:await asArrayBuffer(file)}).promise;const p=await pdf.getPage(1),base=p.getViewport({scale:1}),vp=p.getViewport({scale:520/base.height}),c=document.createElement('canvas');c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);await p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;return c.toDataURL('image/jpeg',.78)}catch(e){console.warn(e);return null}}
 function coverFor(b,large=false){const type=(b.type||'pdf').toUpperCase(), pct=Math.round((b.progress||0)*100);if(b.coverData)return `<div class="cover ${large?'large':''}"><img src="${b.coverData}" alt=""><span class="type">${type}</span></div>`;return `<div class="cover ${large?'large':''}"><div class="type">${type}</div><div class="cover-title">${esc(b.title)}</div><div class="source">${pct?pct+'% leído':'Sin empezar'}</div></div>`}
 function sorted(list){return [...list].sort((a,b)=>{if(sortMode==='title')return (a.title||'').localeCompare(b.title||'','es',{sensitivity:'base'});if(sortMode==='author')return (a.author||'Sin autor').localeCompare(b.author||'Sin autor','es',{sensitivity:'base'});if(sortMode==='progress')return (b.progress||0)-(a.progress||0);return (b.updatedAt||0)-(a.updatedAt||0)})}
 function filtered(all){const q=$("#searchInput").value.trim().toLowerCase();return sorted(all.filter(b=>{const hay=[b.title,b.author,b.fileName,...(b.tags||[])].join(' ').toLowerCase();const mq=!q||hay.includes(q);const mf=activeFilter==='all'||(activeFilter==='favorites'&&b.favorite)||(activeFilter==='pdf'&&b.type==='pdf')||(activeFilter==='epub'&&b.type==='epub');const mt=!activeTag||(b.tags||[]).includes(activeTag);const mc=!activeCollection||(b.collections||[]).includes(activeCollection);return mq&&mf&&mt&&mc}))}
@@ -141,7 +153,14 @@ async function showView(view){
 }
 function renderLibrary(all){const shown=filtered(all);renderHomeDashboard(all);renderCollectionsPage(all);$("#stats").textContent=`${all.length} libro${all.length===1?'':'s'}`;$("#emptyState").classList.toggle('hidden',all.length!==0);$("#noResults").classList.toggle('hidden',!all.length||shown.length!==0);$("#libraryGrid").classList.toggle('list-view',viewMode==='list');renderCollectionBar(all);renderTagBar(all);renderCollectionSummary(all,shown);$("#libraryGrid").innerHTML=shown.map(b=>`<button class="book" data-id="${b.id}" type="button">${coverFor(b)}<div class="book-content"><div class="book-title">${esc(b.title)}</div><div class="book-author">${esc(b.author||'Sin autor')}</div><div class="book-meta">${(b.type||'pdf').toUpperCase()} · ${Math.round((b.progress||0)*100)}%</div><div class="progress"><span style="width:${Math.max(0,Math.min(100,(b.progress||0)*100))}%"></span></div><div class="book-meta tags">${(b.tags||[]).slice(0,4).map(t=>'#'+esc(t)).join(' ')}</div></div></button>`).join('');$("#libraryGrid").querySelectorAll('.book').forEach(x=>x.onclick=()=>openBookDetails(x.dataset.id))}
 function renderContinue(all){const candidates=all.filter(b=>(b.progress||0)>0).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const b=candidates[0];$("#continueSection").classList.toggle('hidden',!b);if(!b)return;$("#continueTitle").textContent=b.title;$("#continueMeta").textContent=`${Math.round(b.progress*100)}% leído · ${(b.type||'pdf').toUpperCase()}${b.author?' · '+b.author:''}`;$("#continueCover").innerHTML=coverFor(b,true);$("#continueBtn").onclick=()=>openBook(b.id,all)}
-async function openBookDetails(id){const b=(await getAllBooks()).find(x=>x.id===id);if(!b)return; if((b.type==='epub' || b.type==='pdf') && b.file && !b.metadataScanned){const meta=b.type==='epub'?await extractEpubMetadata(b.file):await extractPdfMetadata(b.file);b.metadataScanned=true;if(meta.title&&!b.title) b.title=meta.title;if(meta.author&&!b.author)b.author=meta.author;b.language=meta.language||b.language||'';b.publisher=meta.publisher||b.publisher||'';b.description=meta.description||b.description||'';if(meta.coverData&&!b.coverData)b.coverData=meta.coverData;await putBook(b)} modalBook=b;modalTags=[...(b.tags||[])];$("#modalTitle").textContent=b.title;$("#editTitle").value=b.title;$("#editAuthor").value=b.author||'';updateFavoriteButton();const modalPct=Math.round((b.progress||0)*100);$("#modalProgressText").textContent=modalPct+"%";$("#modalProgressBar").style.width=modalPct+"%";$("#modalMeta").innerHTML=`<b>Formato:</b> ${(b.type||'pdf').toUpperCase()}<br><b>Archivo:</b> ${esc(b.fileName)}<br><b>Origen:</b> ${b.source==='drive'?'Google Drive':'Dispositivo'}${b.language?`<br><b>Idioma:</b> ${esc(b.language)}`:''}${b.publisher?`<br><b>Editorial / productor:</b> ${esc(b.publisher)}`:''}${b.description?`<br><b>Descripción:</b> ${esc(b.description)}`:''}`;if(!b.coverData&&b.type==='pdf'&&b.file){$("#modalCover").innerHTML='<div class="cover"><div class="type">PDF</div><div class="cover-title">Generando portada…</div></div>';const c=await generatePdfCover(b.file);if(c){b.coverData=c;await putBook(b)}}$("#modalCover").innerHTML=b.coverData?`<img src="${b.coverData}" alt="Portada">`:coverFor(b);renderModalTags();renderModalCollections();$("#bookModal").classList.remove('hidden')}
+async function openBookDetails(id){
+  const b=(await getAllBooks()).find(x=>x.id===id); if(!b)return;
+  let bookFile=null;try{bookFile=await getBookFile(b)}catch(e){console.warn('Archivo no disponible:',e)}
+  if((b.type==='epub'||b.type==='pdf')&&bookFile&&!b.metadataScanned){try{const meta=b.type==='epub'?await extractEpubMetadata(bookFile):await extractPdfMetadata(bookFile);b.metadataScanned=true;if(meta.title&&!b.title)b.title=meta.title;if(meta.author&&!b.author)b.author=meta.author;b.language=meta.language||b.language||'';b.publisher=meta.publisher||b.publisher||'';b.description=meta.description||b.description||'';if(meta.coverData&&!b.coverData)b.coverData=meta.coverData;await putBook(b)}catch(e){console.warn('Metadata:',e)}}
+  modalBook=b;modalTags=[...(b.tags||[])];$("#modalTitle").textContent=b.title;$("#editTitle").value=b.title;$("#editAuthor").value=b.author||'';updateFavoriteButton();const modalPct=Math.round((b.progress||0)*100);$("#modalProgressText").textContent=modalPct+"%";$("#modalProgressBar").style.width=modalPct+"%";$("#modalMeta").innerHTML=`<b>Formato:</b> ${(b.type||'pdf').toUpperCase()}<br><b>Archivo:</b> ${esc(b.fileName)}<br><b>Origen:</b> ${b.source==='drive'?'Google Drive':'Dispositivo'}${b.language?`<br><b>Idioma:</b> ${esc(b.language)}`:''}${b.publisher?`<br><b>Editorial / productor:</b> ${esc(b.publisher)}`:''}${b.description?`<br><b>Descripción:</b> ${esc(b.description)}`:''}`;
+  if(!b.coverData&&b.type==='pdf'&&bookFile){$("#modalCover").innerHTML='<div class="cover"><div class="type">PDF</div><div class="cover-title">Generando portada…</div></div>';try{const c=await generatePdfCover(bookFile);if(c){b.coverData=c;await putBook(b)}}catch(e){console.warn('Portada PDF:',e)}}
+  $("#modalCover").innerHTML=b.coverData?`<img src="${b.coverData}" alt="Portada">`:coverFor(b);renderModalTags();renderModalCollections();$("#bookModal").classList.remove('hidden')
+}
 function renderModalCollections(){
   const e=$("#modalCollections");
   if(!collections.length){e.innerHTML='<span class="book-meta">Todavía no tienes colecciones. Crea una con “＋ Crear”.</span>';return}
@@ -170,8 +189,8 @@ async function closeReader(){
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}
 async function openPdfReader(b){
   if(!window.pdfjsLib) throw new Error("PDF.js no está disponible");
-  if(!b?.file || typeof b.file.arrayBuffer!=="function") throw new Error("No se encontró el archivo PDF en el almacenamiento local");
-  const buffer=await b.file.arrayBuffer();
+  const file=await getBookFile(b);
+  const buffer=await asArrayBuffer(file);
   currentPdfDoc=await window.pdfjsLib.getDocument({data:buffer}).promise;
   currentPdfPage=Math.max(1,Math.min(currentPdfDoc.numPages,Number(b.pdfPage)||1));
   currentPdfScale=1;
@@ -237,7 +256,8 @@ async function createEpubRendition(b, holder){
   // epub.js 0.3.x is more reliable with archived EPUBs when JSZip is loaded
   // separately and the archive is opened explicitly as binary data.
   if(typeof JSZip==='undefined') throw new Error('JSZip no está disponible');
-  const buffer = await b.file.arrayBuffer();
+  const file = await getBookFile(b);
+  const buffer = await asArrayBuffer(file);
   currentEpubBook = ePub();
   await currentEpubBook.open(buffer, 'binary');
   await currentEpubBook.ready;
@@ -299,71 +319,13 @@ async function openBook(id,books){
 function wait(ms){return new Promise(r=>setTimeout(r,ms))}
 function setLoading(show,title='',detail='',cur=0,total=0,done=false){const p=$("#loadingPanel");if(!show){p.classList.add('hidden');return}p.classList.remove('hidden');$("#loadingTitle").textContent=title;$("#loadingDetail").textContent=detail;const t=Math.max(0,+total||0),c=Math.max(0,Math.min(+cur||0,t||+cur||0)),pct=done?100:t?Math.round(c/t*100):0;$("#loadingBar").style.width=pct+'%';$("#loadingCount").textContent=t?`${c} / ${t}`:'Preparando…';$("#loadingPercent").textContent=pct+'%';$("#loadingDone").classList.toggle('hidden',!done);$("#loadingHint").classList.toggle('hidden',done)}
 async function addFiles(fileList){
-  const files=[...fileList].filter(f=>/\.(pdf|epub)$/i.test(f.name));
-  if(!files.length){toast('No encontré PDF o EPUB en la selección.');return}
-  $("#addMenu").classList.add('hidden');
-  setLoading(true,'Añadiendo libros…','Preparando la importación',0,files.length);
-  await wait(150);
-  let added=0, skipped=0;
-
-  for(const f of files){
-    const lower=f.name.toLowerCase();
-    const relativePath=f.webkitRelativePath||f.name;
-    const folders=relativePath.split('/').slice(0,-1);
-    const tags=[...new Set(folders.map(normTag).filter(Boolean))];
-    const book={
-      id:makeId(), title:titleFromFilename(f.name), fileName:f.name,
-      type:lower.endsWith('.epub')?'epub':'pdf', source:'local', file:new Blob([f],{type:f.type||((lower.endsWith('.epub'))?'application/epub+zip':'application/pdf')}),
-      relativePath, progress:0, cfi:null, tags, collections:[], favorite:false,
-      author:'', language:'', publisher:'', description:'', coverData:null,
-      metadataScanned:false, lastOpenedAt:0, updatedAt:Date.now()
-    };
-
-    try{
-      // IMPORTANTE: guardar el libro primero. La metadata/portada nunca puede
-      // bloquear la importación ni hacer desaparecer un libro de la biblioteca.
-      await putBook(book);
-      added++;
-      setLoading(true,'Añadiendo libros…',`Añadido: ${f.name}`,added,files.length);
-      await wait(45);
-
-      // Enriquecimiento posterior: si PDF.js/JSZip falla, el libro ya quedó guardado.
-      try{
-        let meta={};
-        if(lower.endsWith('.pdf')){
-          meta=await extractPdfMetadata(book.file);
-          if(meta.title||meta.author||meta.language||meta.publisher||meta.description){
-            Object.assign(book,meta);
-          }
-          try{book.coverData=await generatePdfCover(book.file)}catch(e){console.warn('Portada PDF:',e)}
-        }else{
-          meta=await extractEpubMetadata(book.file);
-          Object.assign(book,meta);
-          if(meta.coverData)book.coverData=meta.coverData;
-        }
-        book.metadataScanned=true;
-        book.updatedAt=Date.now();
-        await putBook(book);
-      }catch(e){
-        console.warn('Enriquecimiento del libro omitido:',f.name,e);
-        try{book.metadataScanned=true;await putBook(book)}catch(inner){console.warn('No se pudo actualizar metadata:',inner)}
-      }
-    }catch(e){
-      console.error('No se pudo guardar el libro:',f.name,e);
-      skipped++;
-      setLoading(true,'Añadiendo libros…',`No se pudo añadir: ${f.name}`,added+skipped,files.length);
-      await wait(120);
-    }
-  }
-
-  await renderLibrary(await getAllBooks());
-  const detail=skipped
-    ? `${added} añadido${added===1?'':'s'} · ${skipped} con problemas`
-    : `${added} libro${added===1?'':'s'} añadido${added===1?'':'s'} a tu biblioteca.`;
-  setLoading(true,'✓ Importación completada',detail,files.length,files.length,true);
-  await wait(1300);
-  setLoading(false);
-  toast(skipped?`${added} libros añadidos · ${skipped} con problemas.`:`${added} libro${added===1?'':'s'} añadido${added===1?'':'s'} a tu biblioteca.`);
+  const files=[...fileList].filter(f=>/\.(pdf|epub)$/i.test(f.name));if(!files.length){toast('No encontré PDF o EPUB en la selección.');return}
+  $("#addMenu").classList.add('hidden');setLoading(true,'Añadiendo libros…','Preparando la importación',0,files.length);await wait(100);let added=0,skipped=0;
+  for(const f of files){const lower=f.name.toLowerCase(),relativePath=f.webkitRelativePath||f.name,folders=relativePath.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))],id=makeId();const book={id,title:titleFromFilename(f.name),fileName:f.name,type:lower.endsWith('.epub')?'epub':'pdf',source:'local',fileKey:id,relativePath,progress:0,cfi:null,tags,collections:[],favorite:false,author:'',language:'',publisher:'',description:'',coverData:null,metadataScanned:false,lastOpenedAt:0,updatedAt:Date.now()};try{
+      setLoading(true,'Añadiendo libros…',`Guardando: ${f.name}`,added,files.length);const buffer=await f.arrayBuffer();await putFileData(id,buffer,f.type||((lower.endsWith('.epub'))?'application/epub+zip':'application/pdf'));try{await putBook(book)}catch(e){try{await deleteFileData(id)}catch(_){}throw e}added++;setLoading(true,'Añadiendo libros…',`Añadido: ${f.name}`,added,files.length);
+      try{const file=await getBookFile(book);const meta=lower.endsWith('.pdf')?await extractPdfMetadata(file):await extractEpubMetadata(file);if(meta.title)book.title=meta.title;if(meta.author)book.author=meta.author;if(meta.language)book.language=meta.language;if(meta.publisher)book.publisher=meta.publisher;if(meta.description)book.description=meta.description;if(meta.coverData)book.coverData=meta.coverData;book.metadataScanned=true;book.updatedAt=Date.now();await putBook(book)}catch(e){console.warn('Enriquecimiento omitido:',f.name,e)}
+    }catch(e){console.error('No se pudo añadir:',f.name,e);skipped++;setLoading(true,'Añadiendo libros…',`No se pudo añadir: ${f.name} — ${e?.name||'error'}`,added+skipped,files.length);await wait(250)}}
+  await renderLibrary(await getAllBooks());const detail=skipped?`${added} añadido${added===1?'':'s'} · ${skipped} con problemas`:`${added} libro${added===1?'':'s'} añadido${added===1?'':'s'} a tu biblioteca.`;setLoading(true,'✓ Importación completada',detail,files.length,files.length,true);await wait(1300);setLoading(false);toast(skipped?`${added} libros añadidos · ${skipped} con problemas.`:`${added} libro${added===1?'':'s'} añadido${added===1?'':'s'} a tu biblioteca.`)
 }
 $("#addBtn").onclick=()=>$("#addMenu").classList.toggle('hidden');$("#addFilesBtn").onclick=()=>{$("#addMenu").classList.add('hidden');$("#fileInput").click()};$("#addFolderBtn").onclick=()=>{$("#addMenu").classList.add('hidden');$("#folderInput").click()};$("#emptyAddBtn").onclick=()=>$("#fileInput").click();$("#fileInput").onchange=async e=>{await addFiles(e.target.files);e.target.value=''};$("#folderInput").onchange=async e=>{await addFiles(e.target.files);e.target.value=''};
 document.addEventListener('click',e=>{if(!e.target.closest('.add-wrap'))$("#addMenu").classList.add('hidden')});
