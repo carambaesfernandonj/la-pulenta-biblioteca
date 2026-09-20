@@ -260,21 +260,22 @@ async function closeReader(){
   currentEpubBook=null;
   if(currentEpubUrl){URL.revokeObjectURL(currentEpubUrl);currentEpubUrl=null}
   if(currentObjectUrl){URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=null}
-  $("#readerBody").innerHTML='';
-  $("#reader").classList.add('hidden');
-  currentBook=null
+  if(pdfState?.cleanup){try{pdfState.cleanup()}catch(e){}}
+  if(pdfState?.doc){try{await pdfState.doc.destroy()}catch(e){}}
+  setPdfStateDefaults();
+  const controls=document.getElementById('pdfReaderControls');if(controls)controls.classList.add('hidden');
+  document.getElementById('readerBody').innerHTML='';
+  document.getElementById('reader').classList.add('hidden');
+  currentBook=null;
   try{renderLibrary(await getAllBooks())}catch(e){}
 }
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}
 async function createEpubRendition(b, holder){
-  // epub.js 0.3.x is more reliable with archived EPUBs when JSZip is loaded
-  // separately and the archive is opened explicitly as binary data.
   if(typeof JSZip==='undefined') throw new Error('JSZip no está disponible');
   const buffer = await b.file.arrayBuffer();
   currentEpubBook = ePub();
   await currentEpubBook.open(buffer, 'binary');
   await currentEpubBook.ready;
-  // Generamos una tabla de posiciones para poder calcular un porcentaje fiable.
   try{await currentEpubBook.locations.generate(1000)}catch(e){console.warn('No pude generar posiciones EPUB',e)}
   await nextFrame();
   const rect=holder.getBoundingClientRect();
@@ -286,18 +287,9 @@ async function createEpubRendition(b, holder){
     const cfi=loc?.start?.cfi;
     if(cfi){
       currentBook.cfi=cfi;
-      // epub.js no siempre rellena loc.start.percentage. La fuente fiable es
-      // la tabla de posiciones que generamos al abrir el EPUB.
       let pct=NaN;
-      try{
-        if(currentEpubBook?.locations?.length){
-          pct=Number(currentEpubBook.locations.percentageFromCfi(cfi));
-        }
-      }catch(e){}
-      if(!Number.isFinite(pct)){
-        const raw=Number(loc?.start?.percentage);
-        if(Number.isFinite(raw)) pct=raw;
-      }
+      try{if(currentEpubBook?.locations?.length)pct=Number(currentEpubBook.locations.percentageFromCfi(cfi))}catch(e){}
+      if(!Number.isFinite(pct)){const raw=Number(loc?.start?.percentage);if(Number.isFinite(raw))pct=raw}
       if(Number.isFinite(pct)) currentBook.progress=Math.max(0,Math.min(1,pct));
       currentBook.updatedAt=Date.now();
       try{await putBook(currentBook)}catch(e){console.warn('No pude guardar progreso EPUB',e)}
@@ -310,39 +302,79 @@ async function createEpubRendition(b, holder){
 function updateReaderInfo(){
   if(!currentBook)return;
   const pct=Math.round((currentBook.progress||0)*100);
-  $("#readerInfo").textContent=`${(currentBook.type||'pdf').toUpperCase()} · ${currentBook.source==='drive'?'Google Drive':'Dispositivo'} · ${pct}%`;
+  if(pdfState?.doc){
+    const p=pdfState.page||1, n=pdfState.doc.numPages||0;
+    document.getElementById('readerInfo').textContent=`PDF · Página ${p}${n?` / ${n}`:''} · ${pct}%`;
+  }else{
+    document.getElementById('readerInfo').textContent=`${(currentBook.type||'pdf').toUpperCase()} · ${currentBook.source==='drive'?'Google Drive':'Dispositivo'} · ${pct}%`;
+  }
+}
+const pdfState={};
+function setPdfStateDefaults(){pdfState.doc=null;pdfState.page=1;pdfState.double=false;pdfState.zoom=1;pdfState.fit=true;pdfState.renderToken=0;pdfState.swipeX=0;pdfState.swipeY=0}
+async function openPdfReader(b){
+  if(!window.pdfjsLib)throw new Error('PDF.js no está disponible');
+  setPdfStateDefaults();
+  const stage=document.createElement('div');stage.className='pdf-stage';stage.tabIndex=0;
+  const spread=document.createElement('div');spread.className='pdf-spread';stage.appendChild(spread);
+  const info=document.createElement('div');info.className='pdf-bottom-info';stage.appendChild(info);
+  document.getElementById('readerBody').appendChild(stage);
+  pdfState.doc=await window.pdfjsLib.getDocument({data:await b.file.arrayBuffer()}).promise;
+  pdfState.page=Math.max(1,Math.min(Number(b.pdfPage)||1,pdfState.doc.numPages));
+  pdfState.double=!!b.pdfDouble;
+  pdfState.zoom=Number(b.pdfZoom)||1;
+  pdfState.fit=true;
+  document.getElementById('pdfReaderControls').classList.remove('hidden');
+  const single=document.getElementById('pdfSingleBtn'), dbl=document.getElementById('pdfDoubleBtn');
+  single.classList.toggle('active',!pdfState.double);dbl.classList.toggle('active',pdfState.double);
+  const render=async()=>{
+    const token=++pdfState.renderToken;spread.innerHTML='';
+    const pages=pdfState.double?[pdfState.page,Math.min(pdfState.page+1,pdfState.doc.numPages)]:[pdfState.page];
+    const unique=[...new Set(pages)].filter(n=>n>=1&&n<=pdfState.doc.numPages);
+    for(const num of unique){
+      const page=await pdfState.doc.getPage(num);if(token!==pdfState.renderToken)return;
+      const base=page.getViewport({scale:1});
+      const boxW=Math.max(240,stage.clientWidth*(pdfState.double?.47:.94));
+      const boxH=Math.max(240,stage.clientHeight*.91);
+      const fitScale=Math.min(boxW/base.width,boxH/base.height);
+      const scale=pdfState.fit?fitScale:fitScale*pdfState.zoom;
+      const viewport=page.getViewport({scale});
+      const wrap=document.createElement('div');wrap.className='pdf-page-wrap'+(pdfState.double?'':' single');
+      const canvas=document.createElement('canvas');canvas.className='pdf-page';
+      const dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.ceil(viewport.width*dpr);canvas.height=Math.ceil(viewport.height*dpr);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;
+      wrap.appendChild(canvas);spread.appendChild(wrap);
+      const ctx=canvas.getContext('2d',{alpha:false});const renderViewport=page.getViewport({scale:scale*dpr});await page.render({canvasContext:ctx,viewport:renderViewport}).promise;
+    }
+    info.textContent=`${pdfState.double&&pdfState.page<pdfState.doc.numPages?`Páginas ${pdfState.page}–${pdfState.page+1}`:`Página ${pdfState.page}`} · ${pdfState.doc.numPages} · ${Math.round((pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1)*100)}%`;
+    const pct=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);b.pdfPage=pdfState.page;b.pdfDouble=pdfState.double;b.pdfZoom=pdfState.zoom;b.progress=Math.max(0,Math.min(1,pct));b.updatedAt=Date.now();currentBook=b;try{await putBook(b)}catch(e){}updateReaderInfo();
+  };
+  pdfState.render=render;
+  const goPrev=async()=>{pdfState.page=Math.max(1,pdfState.page-(pdfState.double?2:1));pdfState.fit=true;await render()};
+  const goNext=async()=>{pdfState.page=Math.min(pdfState.doc.numPages,pdfState.page+(pdfState.double?2:1));pdfState.fit=true;await render()};
+  document.getElementById('prevPageBtn').onclick=goPrev;document.getElementById('nextPageBtn').onclick=goNext;
+  document.getElementById('pdfSingleBtn').onclick=async()=>{pdfState.double=false;document.getElementById('pdfSingleBtn').classList.add('active');document.getElementById('pdfDoubleBtn').classList.remove('active');await render()};
+  document.getElementById('pdfDoubleBtn').onclick=async()=>{pdfState.double=true;if(pdfState.page%2===0&&pdfState.page>1)pdfState.page--;document.getElementById('pdfDoubleBtn').classList.add('active');document.getElementById('pdfSingleBtn').classList.remove('active');await render()};
+  document.getElementById('pdfZoomOutBtn').onclick=async()=>{pdfState.fit=false;pdfState.zoom=Math.max(.65,pdfState.zoom-.2);await render()};
+  document.getElementById('pdfZoomInBtn').onclick=async()=>{pdfState.fit=false;pdfState.zoom=Math.min(3,pdfState.zoom+.2);await render()};
+  document.getElementById('pdfFitBtn').onclick=async()=>{pdfState.fit=true;pdfState.zoom=1;await render()};
+  document.getElementById('pdfFullscreenBtn').onclick=async()=>{try{await document.getElementById('reader').requestFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
+  stage.addEventListener('pointerdown',e=>{pdfState.swipeX=e.clientX;pdfState.swipeY=e.clientY});
+  stage.addEventListener('pointerup',async e=>{const dx=e.clientX-pdfState.swipeX,dy=e.clientY-pdfState.swipeY;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2){if(dx<0)await goNext();else await goPrev()}});
+  document.getElementById('saveProgressBtn').onclick=async()=>{if(currentBook){currentBook.pdfPage=pdfState.page;currentBook.progress=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);currentBook.updatedAt=Date.now();await putBook(currentBook);toast('Posición guardada.');updateReaderInfo()}};
+  const onResize=()=>{if(!document.getElementById('reader').classList.contains('hidden'))render()};window.addEventListener('resize',onResize,{passive:true});pdfState.cleanup=()=>window.removeEventListener('resize',onResize);
+  stage.addEventListener('dblclick',async()=>{pdfState.fit=!pdfState.fit;await render()});
+  stage.focus();await render();
 }
 async function openBook(id,books){
   const b=(books||await getAllBooks()).find(x=>x.id===id);if(!b)return;
-  // Registrar que el usuario abrió este libro para que aparezca en Lecturas actuales.
-  b.lastOpenedAt=Date.now();
-  b.updatedAt=b.lastOpenedAt;
-  try{await putBook(b)}catch(e){console.warn('No pude registrar la lectura actual',e)}
+  b.lastOpenedAt=Date.now();b.updatedAt=b.lastOpenedAt;try{await putBook(b)}catch(e){console.warn('No pude registrar la lectura actual',e)}
   currentBook=b;
-  $("#readerTitle").textContent=b.title;
-  updateReaderInfo();
-  $("#readerBody").innerHTML='';
-  $("#reader").classList.remove('hidden');
+  document.getElementById('readerTitle').textContent=b.title;updateReaderInfo();document.getElementById('readerBody').innerHTML='';document.getElementById('reader').classList.remove('hidden');
   if(b.type==='pdf'){
-    const e=document.createElement('embed');
-    e.src=fileUrl(b.file);e.type='application/pdf';
-    $("#readerBody").appendChild(e);
+    try{await openPdfReader(b)}catch(e){console.error('PDF:',e);document.getElementById('readerBody').innerHTML=`<div class="pdf-empty"><h3>No pude abrir este PDF</h3><p>El archivo sigue en tu biblioteca. El lector encontró un problema al cargarlo.</p><p class="book-meta">Detalle técnico: ${esc(e?.message||String(e))}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;}
   }else{
-    if(typeof ePub!=='function'){
-      $("#readerBody").innerHTML='<div class="epub-reader epub-error"><h3>No se pudo cargar el motor EPUB</h3><p>Revisa tu conexión a internet y vuelve a abrir la app.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';
-      return;
-    }
-    const holder=document.createElement('div');
-    holder.className='epub-reader';
-    $("#readerBody").appendChild(holder);
-    try{
-      await nextFrame();
-      await createEpubRendition(b,holder);
-    }catch(e){
-      console.error('EPUB:',e);
-      const detail=esc(e?.message||String(e)||'Error desconocido');
-      $("#readerBody").innerHTML=`<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero el lector no pudo interpretar su contenido.</p><p class="book-meta">Detalle técnico: ${detail}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;
-    }
+    if(typeof ePub!=='function'){document.getElementById('readerBody').innerHTML='<div class="epub-reader epub-error"><h3>No se pudo cargar el motor EPUB</h3><p>Revisa tu conexión a internet y vuelve a abrir la app.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';return}
+    const holder=document.createElement('div');holder.className='epub-reader';document.getElementById('readerBody').appendChild(holder);
+    try{await nextFrame();await createEpubRendition(b,holder)}catch(e){console.error('EPUB:',e);const detail=esc(e?.message||String(e)||'Error desconocido');document.getElementById('readerBody').innerHTML=`<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero el lector no pudo interpretar su contenido.</p><p class="book-meta">Detalle técnico: ${detail}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;}
   }
 }
 function wait(ms){return new Promise(r=>setTimeout(r,ms))}

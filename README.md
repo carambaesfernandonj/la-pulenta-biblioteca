@@ -1,19 +1,15 @@
-# La Pulenta Biblioteca v0.9
+# La Pulenta Biblioteca v1.0 — Lector PDF
 
-## Metadata automática
-- Lee metadatos disponibles de EPUB (título, autor, idioma, editorial y descripción).
-- Extrae la portada declarada por el EPUB cuando existe.
-- Lee metadatos básicos de PDF mediante PDF.js y mantiene la portada de la primera página.
-- Los metadatos se pueden editar desde la ficha del libro.
-- Los libros existentes se enriquecen al abrir su ficha por primera vez.
-- Mantiene lector EPUB/PDF, progreso, lecturas actuales, colecciones, tags y favoritos.
+Basada en la versión estable v0.9.3. Esta versión añade un lector PDF propio con PDF.js sin cambiar el motor EPUB.
 
-## Instalación
-Reemplaza los archivos de la versión anterior en GitHub Pages. Los libros y datos están en IndexedDB/localStorage del navegador.
+## PDF Reader
+- navegación por página
+- swipe horizontal en tablet
+- modo 1 página / 2 páginas
+- zoom + / -
+- ajustar a pantalla
+- pantalla completa
+- progreso y página actual persistentes
+- teclado en PC mediante los botones existentes y atajos globales
 
-
-## v0.9.1
-- Modo oscuro para la biblioteca (el lector conserva su propio aspecto).
-- Eliminación de libros desde la ficha sin borrar el archivo original del dispositivo.
-- Gestión por lotes: seleccionar varios libros desde Colecciones y añadir/quitar de una colección.
-- Se mantiene IndexedDB y la estructura de la v0.9.
+La biblioteca, colecciones, tags, metadata, favoritos y backup se mantienen.
