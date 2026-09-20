@@ -310,7 +310,7 @@ function updateReaderInfo(){
   }
 }
 const pdfState={};
-function setPdfStateDefaults(){pdfState.doc=null;pdfState.page=1;pdfState.double=false;pdfState.zoom=1;pdfState.fit=true;pdfState.renderToken=0;pdfState.swipeX=0;pdfState.swipeY=0}
+function setPdfStateDefaults(){pdfState.doc=null;pdfState.page=1;pdfState.double=false;pdfState.coverFirst=false;pdfState.zoom=1;pdfState.fit=true;pdfState.renderToken=0;pdfState.swipeX=0;pdfState.swipeY=0}
 async function openPdfReader(b){
   if(!window.pdfjsLib)throw new Error('PDF.js no está disponible');
   setPdfStateDefaults();
@@ -321,14 +321,17 @@ async function openPdfReader(b){
   pdfState.doc=await window.pdfjsLib.getDocument({data:await b.file.arrayBuffer()}).promise;
   pdfState.page=Math.max(1,Math.min(Number(b.pdfPage)||1,pdfState.doc.numPages));
   pdfState.double=!!b.pdfDouble;
+  pdfState.coverFirst=pdfState.double && !!b.pdfCoverFirst;
+  if(pdfState.double && pdfState.coverFirst && pdfState.page>1 && pdfState.page%2!==0) pdfState.page=Math.max(2,pdfState.page-1);
+  if(pdfState.double && !pdfState.coverFirst && pdfState.page>1 && pdfState.page%2===0) pdfState.page=Math.max(1,pdfState.page-1);
   pdfState.zoom=Number(b.pdfZoom)||1;
   pdfState.fit=true;
   document.getElementById('pdfReaderControls').classList.remove('hidden');
-  const single=document.getElementById('pdfSingleBtn'), dbl=document.getElementById('pdfDoubleBtn');
-  single.classList.toggle('active',!pdfState.double);dbl.classList.toggle('active',pdfState.double);
+  const single=document.getElementById('pdfSingleBtn'), dbl=document.getElementById('pdfDoubleBtn'), cover=document.getElementById('pdfCoverFirstBtn');
+  single.classList.toggle('active',!pdfState.double);dbl.classList.toggle('active',pdfState.double);cover.classList.toggle('active',pdfState.double&&pdfState.coverFirst);cover.disabled=!pdfState.double;
   const render=async()=>{
     const token=++pdfState.renderToken;spread.innerHTML='';
-    const pages=pdfState.double?[pdfState.page,Math.min(pdfState.page+1,pdfState.doc.numPages)]:[pdfState.page];
+    const pages=pdfState.double?(pdfState.coverFirst && pdfState.page===1?[1]:[pdfState.page,Math.min(pdfState.page+1,pdfState.doc.numPages)]):[pdfState.page];
     const unique=[...new Set(pages)].filter(n=>n>=1&&n<=pdfState.doc.numPages);
     for(const num of unique){
       const page=await pdfState.doc.getPage(num);if(token!==pdfState.renderToken)return;
@@ -344,15 +347,16 @@ async function openPdfReader(b){
       wrap.appendChild(canvas);spread.appendChild(wrap);
       const ctx=canvas.getContext('2d',{alpha:false});const renderViewport=page.getViewport({scale:scale*dpr});await page.render({canvasContext:ctx,viewport:renderViewport}).promise;
     }
-    info.textContent=`${pdfState.double&&pdfState.page<pdfState.doc.numPages?`Páginas ${pdfState.page}–${pdfState.page+1}`:`Página ${pdfState.page}`} · ${pdfState.doc.numPages} · ${Math.round((pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1)*100)}%`;
-    const pct=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);b.pdfPage=pdfState.page;b.pdfDouble=pdfState.double;b.pdfZoom=pdfState.zoom;b.progress=Math.max(0,Math.min(1,pct));b.updatedAt=Date.now();currentBook=b;try{await putBook(b)}catch(e){}updateReaderInfo();
+    const shownLabel=pdfState.double?(pdfState.coverFirst&&pdfState.page===1?'Portada':(pdfState.page<pdfState.doc.numPages?`Páginas ${pdfState.page}–${pdfState.page+1}`:`Página ${pdfState.page}`)):`Página ${pdfState.page}`;info.textContent=`${shownLabel} · ${pdfState.doc.numPages} · ${Math.round((pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1)*100)}%`;
+    const pct=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);b.pdfPage=pdfState.page;b.pdfDouble=pdfState.double;b.pdfCoverFirst=pdfState.coverFirst;b.pdfZoom=pdfState.zoom;b.progress=Math.max(0,Math.min(1,pct));b.updatedAt=Date.now();currentBook=b;try{await putBook(b)}catch(e){}updateReaderInfo();
   };
   pdfState.render=render;
-  const goPrev=async()=>{pdfState.page=Math.max(1,pdfState.page-(pdfState.double?2:1));pdfState.fit=true;await render()};
-  const goNext=async()=>{pdfState.page=Math.min(pdfState.doc.numPages,pdfState.page+(pdfState.double?2:1));pdfState.fit=true;await render()};
+  const goPrev=async()=>{if(pdfState.double&&pdfState.coverFirst){pdfState.page=pdfState.page===1?1:(pdfState.page===2?1:Math.max(2,pdfState.page-2));}else{pdfState.page=Math.max(1,pdfState.page-(pdfState.double?2:1));}pdfState.fit=true;await render()};
+  const goNext=async()=>{if(pdfState.double&&pdfState.coverFirst){pdfState.page=pdfState.page===1?(pdfState.doc.numPages>=2?2:1):Math.min(pdfState.doc.numPages,pdfState.page+2);}else{pdfState.page=Math.min(pdfState.doc.numPages,pdfState.page+(pdfState.double?2:1));}pdfState.fit=true;await render()};
   document.getElementById('prevPageBtn').onclick=goPrev;document.getElementById('nextPageBtn').onclick=goNext;
-  document.getElementById('pdfSingleBtn').onclick=async()=>{pdfState.double=false;document.getElementById('pdfSingleBtn').classList.add('active');document.getElementById('pdfDoubleBtn').classList.remove('active');await render()};
-  document.getElementById('pdfDoubleBtn').onclick=async()=>{pdfState.double=true;if(pdfState.page%2===0&&pdfState.page>1)pdfState.page--;document.getElementById('pdfDoubleBtn').classList.add('active');document.getElementById('pdfSingleBtn').classList.remove('active');await render()};
+  document.getElementById('pdfSingleBtn').onclick=async()=>{pdfState.double=false;pdfState.coverFirst=false;document.getElementById('pdfSingleBtn').classList.add('active');document.getElementById('pdfDoubleBtn').classList.remove('active');document.getElementById('pdfCoverFirstBtn').classList.remove('active');document.getElementById('pdfCoverFirstBtn').disabled=true;await render()};
+  document.getElementById('pdfDoubleBtn').onclick=async()=>{pdfState.double=true;if(pdfState.coverFirst){pdfState.page=pdfState.page===1?1:(pdfState.page%2!==0?Math.max(2,pdfState.page-1):pdfState.page);}else if(pdfState.page%2===0&&pdfState.page>1)pdfState.page--;document.getElementById('pdfDoubleBtn').classList.add('active');document.getElementById('pdfSingleBtn').classList.remove('active');document.getElementById('pdfCoverFirstBtn').disabled=false;await render()};
+  document.getElementById('pdfCoverFirstBtn').onclick=async()=>{if(!pdfState.double)return;pdfState.coverFirst=!pdfState.coverFirst;if(pdfState.coverFirst){if(pdfState.page>1&&pdfState.page%2!==0)pdfState.page=Math.max(2,pdfState.page-1);}else if(pdfState.page===1){pdfState.page=1;}document.getElementById('pdfCoverFirstBtn').classList.toggle('active',pdfState.coverFirst);await render()};
   document.getElementById('pdfZoomOutBtn').onclick=async()=>{pdfState.fit=false;pdfState.zoom=Math.max(.65,pdfState.zoom-.2);await render()};
   document.getElementById('pdfZoomInBtn').onclick=async()=>{pdfState.fit=false;pdfState.zoom=Math.min(3,pdfState.zoom+.2);await render()};
   document.getElementById('pdfFitBtn').onclick=async()=>{pdfState.fit=true;pdfState.zoom=1;await render()};
