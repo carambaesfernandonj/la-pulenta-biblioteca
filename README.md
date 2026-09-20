@@ -7,3 +7,7 @@ Incluye lector PDF con página única, doble página, navegación, zoom, progres
 
 ## v1.0.2
 Importación desacoplada del enriquecimiento PDF/EPUB: un fallo de PDF.js o metadata ya no impide guardar el libro.
+
+
+## v1.0.3
+Importación blindada: los archivos seleccionados se guardan como Blob en IndexedDB, evitando problemas de clonación de File en algunos navegadores/tablets. El enriquecimiento de metadata y portadas usa el Blob almacenado y no puede bloquear el guardado.

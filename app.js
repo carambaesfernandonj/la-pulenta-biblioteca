@@ -313,7 +313,7 @@ async function addFiles(fileList){
     const tags=[...new Set(folders.map(normTag).filter(Boolean))];
     const book={
       id:makeId(), title:titleFromFilename(f.name), fileName:f.name,
-      type:lower.endsWith('.epub')?'epub':'pdf', source:'local', file:f,
+      type:lower.endsWith('.epub')?'epub':'pdf', source:'local', file:new Blob([f],{type:f.type||((lower.endsWith('.epub'))?'application/epub+zip':'application/pdf')}),
       relativePath, progress:0, cfi:null, tags, collections:[], favorite:false,
       author:'', language:'', publisher:'', description:'', coverData:null,
       metadataScanned:false, lastOpenedAt:0, updatedAt:Date.now()
@@ -331,13 +331,13 @@ async function addFiles(fileList){
       try{
         let meta={};
         if(lower.endsWith('.pdf')){
-          meta=await extractPdfMetadata(f);
+          meta=await extractPdfMetadata(book.file);
           if(meta.title||meta.author||meta.language||meta.publisher||meta.description){
             Object.assign(book,meta);
           }
-          try{book.coverData=await generatePdfCover(f)}catch(e){console.warn('Portada PDF:',e)}
+          try{book.coverData=await generatePdfCover(book.file)}catch(e){console.warn('Portada PDF:',e)}
         }else{
-          meta=await extractEpubMetadata(f);
+          meta=await extractEpubMetadata(book.file);
           Object.assign(book,meta);
           if(meta.coverData)book.coverData=meta.coverData;
         }
@@ -398,8 +398,8 @@ if($("#pdfZoomIn"))$("#pdfZoomIn").onclick=()=>pdfZoom(.15);
 if($("#fullscreenBtn"))$("#fullscreenBtn").onclick=async()=>{try{if(!document.fullscreenElement)await $("#reader").requestFullscreen();else await document.exitFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
 document.addEventListener('fullscreenchange',()=>$("#reader").classList.toggle('reader-fullscreen',!!document.fullscreenElement));
 let pdfTouchStartX=0;
-$("#readerBody").addEventListener('touchstart',e=>{if(currentBook?.type==='pdf'&&e.touches[0])pdfTouchStartX=e.touches[0].clientX},{passive:true});
-$("#readerBody").addEventListener('touchend',async e=>{if(currentBook?.type!=='pdf'||!e.changedTouches[0])return;const dx=e.changedTouches[0].clientX-pdfTouchStartX;if(Math.abs(dx)>50){if(dx<0)await pdfNext();else await pdfPrev()}},{passive:true});
+if($("#readerBody"))$("#readerBody").addEventListener('touchstart',e=>{if(currentBook?.type==='pdf'&&e.touches[0])pdfTouchStartX=e.touches[0].clientX},{passive:true});
+if($("#readerBody"))$("#readerBody").addEventListener('touchend',async e=>{if(currentBook?.type!=='pdf'||!e.changedTouches[0])return;const dx=e.changedTouches[0].clientX-pdfTouchStartX;if(Math.abs(dx)>50){if(dx<0)await pdfNext();else await pdfPrev()}},{passive:true});
 window.addEventListener('resize',()=>{if(currentBook?.type==='pdf'&&!$("#reader").classList.contains('hidden'))renderPdfPages()});
 document.addEventListener('keydown',async e=>{
   if($("#reader").classList.contains('hidden'))return;
