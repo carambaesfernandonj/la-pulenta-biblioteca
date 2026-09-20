@@ -20,7 +20,7 @@
       <button class="nav-btn" data-view="collections" type="button">📚 Colecciones</button>
       <button class="nav-btn" data-view="library" type="button">🗂 Biblioteca</button>
     </nav>
-    <div class="theme-wrap"><button id="themeToggle" class="secondary theme-toggle" type="button" title="Cambiar modo de biblioteca">🌙 Modo oscuro</button></div>
+    <div class="theme-wrap"><button id="themeToggle" class="secondary theme-toggle" type="button" title="Cambiar modo de biblioteca">🌙 Modo oscuro</button><button id="settingsBtn" class="secondary theme-toggle" type="button" title="Ajustes y respaldo">⚙️ Ajustes</button></div>
     <div class="add-wrap">
       <button id="addBtn" class="primary" type="button">＋ Añadir</button>
       <div id="addMenu" class="add-menu hidden">
@@ -123,6 +123,21 @@
       <div class="batch-toolbar"><label class="search"><span>🔎</span><input id="batchSearch" type="search" placeholder="Buscar libro…"></label><button id="batchSelectAll" class="secondary" type="button">Seleccionar todos</button><button id="batchClear" class="secondary" type="button">Limpiar</button></div>
       <div id="batchList" class="batch-list"></div>
       <div class="batch-footer"><span id="batchCount">0 seleccionados</span><div><button id="batchCancel" class="secondary" type="button">Cancelar</button><button id="batchSave" class="primary" type="button">Guardar selección</button></div></div>
+    </div>
+  </div>
+
+  <div id="backupModal" class="batch-modal hidden" role="dialog" aria-modal="true" aria-labelledby="backupTitle">
+    <div class="batch-card backup-card">
+      <button id="backupClose" class="modal-close" type="button" aria-label="Cerrar">✕</button>
+      <div class="eyebrow">SEGURIDAD</div>
+      <h2 id="backupTitle">Respaldo de La Pulenta</h2>
+      <p class="batch-subtitle">Guarda una copia de tus libros, colecciones, tags, favoritos, metadata y progreso. El respaldo no modifica tu biblioteca actual.</p>
+      <div class="backup-actions">
+        <button id="exportBackupBtn" class="primary" type="button">⬇️ Exportar respaldo</button>
+        <button id="importBackupBtn" class="secondary" type="button">⬆️ Importar respaldo</button>
+      </div>
+      <input id="backupInput" type="file" accept=".zip,application/zip" hidden>
+      <div class="backup-note">Al importar, los libros del respaldo se agregan o actualizan por su ID. No se borran los libros que ya tengas fuera del respaldo.</div>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

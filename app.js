@@ -21,6 +21,91 @@ function normTag(t){return String(t||'').trim().toLowerCase().replace(/\s+/g,'-'
 function loadCollections(){try{const x=JSON.parse(localStorage.getItem(COLLECTIONS_KEY)||'[]');collections=Array.isArray(x)?x.filter(Boolean):[]}catch(e){collections=[]}}
 function saveCollections(){localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(collections))}
 function collectionLabel(c){return String(c||'').replace(/\s+/g,' ').trim()}
+async function exportLibraryBackup(){
+  if(typeof JSZip==='undefined'){toast('No está disponible el sistema de respaldo.');return}
+  try{
+    const books=await getAllBooks();
+    if(!books.length && !collections.length){toast('No hay datos de biblioteca para respaldar.');return}
+    setLoading(true,'Creando respaldo…','Preparando tu biblioteca',0,Math.max(1,books.length));
+    const zip=new JSZip();
+    const manifest={
+      format:'la-pulenta-biblioteca-backup',
+      version:1,
+      createdAt:new Date().toISOString(),
+      collections:[...collections],
+      theme:localStorage.getItem('pulenta_theme')||'light',
+      books:[]
+    };
+    for(let i=0;i<books.length;i++){
+      const b=books[i];
+      const ext=(b.type||'pdf').toLowerCase()==='epub'?'epub':'pdf';
+      const path=`files/${b.id}.${ext}`;
+      const fileBlob=b.file instanceof Blob?b.file:null;
+      if(fileBlob) zip.file(path,fileBlob);
+      const copy={...b};
+      delete copy.file;
+      copy.backupFile=fileBlob?path:null;
+      manifest.books.push(copy);
+      setLoading(true,'Creando respaldo…',`Preparando: ${b.title||b.fileName||'libro'}`,i+1,books.length);
+      await wait(0);
+    }
+    zip.file('pulenta-backup.json',JSON.stringify(manifest,null,2));
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}},meta=>{
+      const pct=books.length?Math.round((meta.percent||0)/100*100):Math.round(meta.percent||0);
+      setLoading(true,'Creando respaldo…','Comprimiendo archivos',books.length,books.length);
+      const bar=$('#loadingBar');if(bar)bar.style.width=Math.max(0,Math.min(100,pct))+'%';
+      const per=$('#loadingPercent');if(per)per.textContent=Math.max(0,Math.min(100,pct))+'%';
+    });
+    const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`la-pulenta-respaldo-${stamp}.zip`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    setLoading(true,'✓ Respaldo listo','Se descargó una copia de tu biblioteca.',books.length,books.length,true);await wait(1200);setLoading(false);toast('Respaldo descargado correctamente.');
+  }catch(e){console.error('Backup export:',e);setLoading(false);toast('No pude crear el respaldo.');}
+}
+async function importLibraryBackup(file){
+  if(!file||typeof JSZip==='undefined')return;
+  try{
+    setLoading(true,'Restaurando respaldo…','Abriendo archivo',0,1);
+    const zip=await JSZip.loadAsync(file);
+    const manifestFile=zip.file('pulenta-backup.json');
+    if(!manifestFile)throw new Error('No encontré pulenta-backup.json');
+    const manifest=JSON.parse(await manifestFile.async('text'));
+    if(manifest.format!=='la-pulenta-biblioteca-backup')throw new Error('El archivo no parece un respaldo de La Pulenta.');
+    if(!Array.isArray(manifest.books))throw new Error('El respaldo no contiene libros válidos.');
+    const backupCollections=Array.isArray(manifest.collections)?manifest.collections.filter(Boolean):[];
+    collections=[...new Set([...collections,...backupCollections])].sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));
+    saveCollections();
+    let restored=0,missing=0;
+    for(let i=0;i<manifest.books.length;i++){
+      const meta=manifest.books[i];
+      const copy={...meta};
+      delete copy.backupFile;
+      const entry=meta.backupFile?zip.file(meta.backupFile):null;
+      if(entry){
+        const blob=await entry.async('blob');
+        copy.file=new File([blob],meta.fileName||`libro.${meta.type||'pdf'}`,{type:meta.type==='epub'?'application/epub+zip':'application/pdf'});
+        restored++;
+      }else if(meta.file){
+        copy.file=meta.file;
+        restored++;
+      }else{
+        missing++;
+        continue;
+      }
+      await putBook(copy);
+      setLoading(true,'Restaurando respaldo…',`Restaurando: ${copy.title||copy.fileName||'libro'}`,i+1,manifest.books.length);
+    }
+    if(manifest.theme==='dark'||manifest.theme==='light'){
+      localStorage.setItem('pulenta_theme',manifest.theme);loadTheme();
+    }
+    renderLibrary(await getAllBooks());
+    setLoading(true,'✓ Restauración completada',`${restored} libro${restored===1?'':'s'} restaurado${restored===1?'':'s'}${missing?` · ${missing} sin archivo`:''}`,manifest.books.length,manifest.books.length,true);
+    await wait(1400);setLoading(false);toast(missing?`${restored} restaurados · ${missing} sin archivo.`:`${restored} libros restaurados correctamente.`);
+    closeBackupModal();
+  }catch(e){console.error('Backup import:',e);setLoading(false);toast(`No pude importar el respaldo: ${e.message||'archivo inválido'}`)}
+}
+function openBackupModal(){$('#backupModal').classList.remove('hidden')}
+function closeBackupModal(){$('#backupModal').classList.add('hidden')}
+
 function loadTheme(){const dark=localStorage.getItem("pulenta_theme")==="dark";document.body.classList.toggle("dark-library",dark);const b=$("#themeToggle");if(b)b.textContent=dark?"☀️ Modo claro":"🌙 Modo oscuro"}
 function toggleTheme(){const dark=!document.body.classList.contains("dark-library");document.body.classList.toggle("dark-library",dark);localStorage.setItem("pulenta_theme",dark?"dark":"light");const b=$("#themeToggle");if(b)b.textContent=dark?"☀️ Modo claro":"🌙 Modo oscuro"}
 
@@ -273,6 +358,12 @@ $("#gridViewBtn").onclick=()=>{viewMode='grid';$("#gridViewBtn").classList.add('
 $("#listViewBtn").onclick=()=>{viewMode='list';$("#listViewBtn").classList.add('active');$("#gridViewBtn").classList.remove('active');renderLibrary(lastBooks)};
 let lastBooks=[];const originalRender=renderLibrary;renderLibrary=function(all){lastBooks=all;originalRender(all)};
 $("#themeToggle").onclick=toggleTheme;
+$("#settingsBtn").onclick=openBackupModal;
+$("#backupClose").onclick=closeBackupModal;
+$("#backupModal").onclick=e=>{if(e.target===$("#backupModal"))closeBackupModal()};
+$("#exportBackupBtn").onclick=exportLibraryBackup;
+$("#importBackupBtn").onclick=()=>$("#backupInput").click();
+$("#backupInput").onchange=async e=>{const f=e.target.files?.[0];if(f){if(confirm("¿Importar este respaldo? Los libros del respaldo se agregarán o actualizarán. Los demás libros no se borrarán."))await importLibraryBackup(f)}e.target.value=""};
 loadTheme();
 $("#modalClose").onclick=closeBookDetails;$("#deleteBook").onclick=deleteCurrentBook;$("#bookModal").onclick=e=>{if(e.target===$("#bookModal"))closeBookDetails()};$("#saveBook").onclick=saveBookDetails;$("#favoriteBook").onclick=async()=>{if(!modalBook)return;modalBook.favorite=!modalBook.favorite;modalBook.updatedAt=Date.now();await putBook(modalBook);updateFavoriteButton();renderLibrary(await getAllBooks());toast(modalBook.favorite?'Añadido a favoritos.':'Quitado de favoritos.')};$("#addTag").onclick=()=>{const i=$("#newTag"),t=normTag(i.value);if(t&&!modalTags.includes(t)){modalTags.push(t);renderModalTags()}i.value='';i.focus()};$("#newTag").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#addTag").click()}};
 $("#createCollection").onclick=()=>{const i=$("#newCollection"),name=collectionLabel(i.value);if(!name){i.focus();return}if(collections.some(c=>c.toLowerCase()===name.toLowerCase())){toast("Esa colección ya existe.");i.select();return}collections.push(name);collections.sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();if(modalBook){modalBook.collections=[...new Set([...(modalBook.collections||[]),name])]}i.value='';renderModalCollections();renderLibrary(lastBooks);toast(`Colección “${name}” creada y asignada.`)};
