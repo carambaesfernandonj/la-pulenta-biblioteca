@@ -370,6 +370,18 @@ function playerLoadVoices(){
   };
   fill(); speechSynthesis.onvoiceschanged=fill;
 }
+function playerTotalChunks(){
+  return playerState.chapters.reduce((n,c)=>n+(c?.chunks?.length||0),0);
+}
+function playerChapterStartChunk(index){
+  return playerState.chapters.slice(0,index).reduce((n,c)=>n+(c?.chunks?.length||0),0);
+}
+function playerPopulateChapterSelect(){
+  const sel=$('#playerChapterSelect');
+  if(!sel)return;
+  sel.innerHTML=playerState.chapters.map((c,i)=>`<option value="${i}">${i+1}. ${esc(c.title||`Capítulo ${i+1}`)}</option>`).join('');
+  sel.value=String(Math.max(0,playerState.chapterIndex));
+}
 function playerSetUI(){
   const b=playerState.book;if(!b)return;
   $('#playerTitle').textContent=b.title||b.fileName||'Sin título';
@@ -378,13 +390,27 @@ function playerSetUI(){
   const ch=playerState.chapters[playerState.chapterIndex];
   $('#playerChapter').textContent=ch?.title||'—';
   $('#playerChapterMeta').textContent=ch?`Capítulo ${playerState.chapterIndex+1} de ${playerState.chapters.length}`:'—';
-  const total=playerState.chapters.reduce((n,c)=>n+c.chunks.length,0)||1;
-  const done=playerState.chapters.slice(0,playerState.chapterIndex).reduce((n,c)=>n+c.chunks.length,0)+playerState.chunkIndex;
+
+  const total=Math.max(1,playerTotalChunks());
+  const done=Math.min(total,playerChapterStartChunk(playerState.chapterIndex)+playerState.chunkIndex);
   const pct=Math.max(0,Math.min(1,done/total));
   $('#playerProgressBar').style.width=Math.round(pct*100)+'%';
   $('#playerPercentLabel').textContent=Math.round(pct*100)+'%';
-  $('#playerTimeLabel').textContent=playerState.speaking?(playerState.paused?'Pausado':'Reproduciendo'):'Listo';
+  $('#playerTimeLabel').textContent=playerState.speaking?(playerState.paused?'Pausado':'Reproduciendo'):(done>=total?'Terminado':'Listo');
   $('#playerPlayBtn').textContent=playerState.speaking&&!playerState.paused?'⏸':'▶';
+
+  const timeline=$('#playerTimeline');
+  if(timeline){
+    timeline.max=String(total);
+    timeline.value=String(done);
+    timeline.disabled=total<=1;
+    timeline.setAttribute('aria-valuetext',`${Math.round(pct*100)}% del libro`);
+  }
+  const chapterSelect=$('#playerChapterSelect');
+  if(chapterSelect){
+    if(chapterSelect.options.length!==playerState.chapters.length)playerPopulateChapterSelect();
+    chapterSelect.value=String(Math.max(0,playerState.chapterIndex));
+  }
 }
 async function playerPersist(){
   const b=playerState.book;if(!b)return;
@@ -428,6 +454,7 @@ async function playerLoadBook(id){
     playerState.chapters=await extractEpubChapters(b);
     if(!playerState.chapters.length)throw new Error('El EPUB no contiene secciones con texto legible.');
     playerState.chapterIndex=Math.min(playerState.chapterIndex,playerState.chapters.length-1);
+    playerPopulateChapterSelect();
     const currentChapter=playerState.chapters[playerState.chapterIndex];
     playerState.chunkIndex=Math.min(playerState.chunkIndex,Math.max(0,currentChapter.chunks.length-1));
     playerSetUI();
@@ -632,6 +659,39 @@ $("#playerBackBtn")?.addEventListener('click',async()=>{if(!playerState.book)ret
 $("#playerForwardBtn")?.addEventListener('click',async()=>{if(!playerState.book)return;playerCancelSpeech();const ch=playerState.chapters[playerState.chapterIndex];if(ch)playerState.chunkIndex=Math.min(ch.chunks.length,playerState.chunkIndex+1);await playerSpeakCurrent()});
 $("#playerRateSelect")?.addEventListener('change',()=>{if(playerState.speaking){playerCancelSpeech();playerSpeakCurrent()} });
 $("#playerVoiceSelect")?.addEventListener('change',()=>{if(playerState.speaking){playerCancelSpeech();playerSpeakCurrent()} });
+$("#playerChapterSelect")?.addEventListener('change',async e=>{
+  if(!playerState.book||!playerState.chapters.length)return;
+  const wasPlaying=playerState.speaking&&!playerState.paused;
+  playerCancelSpeech();
+  const next=Math.max(0,Math.min(playerState.chapters.length-1,Number(e.target.value)||0));
+  playerState.chapterIndex=next;
+  playerState.chunkIndex=0;
+  await playerPersist();
+  playerSetUI();
+  if(wasPlaying)await playerSpeakCurrent();
+});
+$("#playerTimeline")?.addEventListener('change',async e=>{
+  if(!playerState.book||!playerState.chapters.length)return;
+  const wasPlaying=playerState.speaking&&!playerState.paused;
+  playerCancelSpeech();
+  const total=playerTotalChunks();
+  let target=Math.max(0,Math.min(total,Number(e.target.value)||0));
+  let chapter=playerState.chapters.length-1;
+  let chunk=playerState.chapters[chapter]?.chunks.length||0;
+  for(let i=0;i<playerState.chapters.length;i++){
+    const count=playerState.chapters[i].chunks.length;
+    if(target<=playerChapterStartChunk(i)+count){
+      chapter=i;
+      chunk=Math.max(0,target-playerChapterStartChunk(i));
+      break;
+    }
+  }
+  playerState.chapterIndex=chapter;
+  playerState.chunkIndex=Math.min(chunk,playerState.chapters[chapter].chunks.length);
+  await playerPersist();
+  playerSetUI();
+  if(wasPlaying&&playerState.chunkIndex<playerState.chapters[chapter].chunks.length)await playerSpeakCurrent();
+});
 
 $("#homeLibraryBtn").onclick=()=>showView("library");
 $("#newCollectionPageBtn").onclick=()=>createCollectionPrompt();

@@ -29,3 +29,10 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Progreso de escucha independiente del progreso de lectura.
 - Continuación desde el último capítulo/bloque escuchado.
 - PDF TTS queda reservado para una siguiente etapa.
+
+
+## v1.1.3
+- Selector de capítulo en El Pulento Player.
+- Línea de tiempo interactiva para saltar por bloques de texto.
+- Progreso de escucha persistente y sincronizado con la posición seleccionada.
+- La línea de tiempo representa bloques de texto, no segundos exactos, porque SpeechSynthesis no expone una posición temporal fiable del audio.
