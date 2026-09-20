@@ -4,6 +4,7 @@ const STORE = "books";
 let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
 let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[], currentView="home";
 let collections=[];
+let batchCollectionName=null,batchBooks=[],batchSelected=new Set();
 const COLLECTIONS_KEY="pulenta_collections_v1";
 if(window.pdfjsLib?.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 const $=s=>document.querySelector(s);
@@ -13,12 +14,16 @@ function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,
 function tx(m="readonly"){return db.transaction(STORE,m).objectStore(STORE)}
 function getAllBooks(){return new Promise((res,rej)=>{const r=tx().getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 function putBook(b){return new Promise((res,rej)=>{const r=tx("readwrite").put(b);r.onsuccess=res;r.onerror=()=>rej(r.error)})}
+function deleteBookById(id){return new Promise((res,rej)=>{const r=tx("readwrite").delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error)})}
 function makeId(){return crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)}
 function titleFromFilename(n){return n.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ').trim()||'Sin título'}
 function normTag(t){return String(t||'').trim().toLowerCase().replace(/\s+/g,'-')}
 function loadCollections(){try{const x=JSON.parse(localStorage.getItem(COLLECTIONS_KEY)||'[]');collections=Array.isArray(x)?x.filter(Boolean):[]}catch(e){collections=[]}}
 function saveCollections(){localStorage.setItem(COLLECTIONS_KEY,JSON.stringify(collections))}
 function collectionLabel(c){return String(c||'').replace(/\s+/g,' ').trim()}
+function loadTheme(){const dark=localStorage.getItem("pulenta_theme")==="dark";document.body.classList.toggle("dark-library",dark);const b=$("#themeToggle");if(b)b.textContent=dark?"☀️ Modo claro":"🌙 Modo oscuro"}
+function toggleTheme(){const dark=!document.body.classList.contains("dark-library");document.body.classList.toggle("dark-library",dark);localStorage.setItem("pulenta_theme",dark?"dark":"light");const b=$("#themeToggle");if(b)b.textContent=dark?"☀️ Modo claro":"🌙 Modo oscuro"}
+
 async function extractEpubMetadata(file){
   if(!file||typeof JSZip==='undefined') return {};
   try{
@@ -99,13 +104,20 @@ function renderCollectionsPage(all){
         <div class="collection-page-covers">${preview}</div>
         <div class="collection-page-copy"><span class="eyebrow">COLECCIÓN</span><strong>${esc(c.name)}</strong><span>${c.books.length} ${c.books.length===1?'libro':'libros'}</span>${books[0]?`<small>${esc(books[0].title)}</small>`:''}</div>
       </button>
-      <div class="collection-page-actions"><button class="secondary collection-action" data-rename-collection="${esc(c.name)}" type="button">✏️ Renombrar</button><button class="secondary collection-action danger" data-delete-collection="${esc(c.name)}" type="button">Eliminar</button></div>
+      <div class="collection-page-actions"><button class="secondary collection-action" data-batch-collection="${esc(c.name)}" type="button">＋ Añadir libros</button><button class="secondary collection-action" data-rename-collection="${esc(c.name)}" type="button">✏️ Renombrar</button><button class="secondary collection-action danger" data-delete-collection="${esc(c.name)}" type="button">Eliminar</button></div>
     </article>`;
   }).join('');
   grid.querySelectorAll('[data-collection-page]').forEach(btn=>btn.onclick=()=>{activeCollection=btn.dataset.collectionPage;showView('library');setTimeout(()=>{renderLibrary(lastBooks);$("#collectionBar")?.scrollIntoView({behavior:'smooth',block:'center'})},0)});
   grid.querySelectorAll('[data-rename-collection]').forEach(btn=>btn.onclick=()=>renameCollection(btn.dataset.renameCollection));
   grid.querySelectorAll('[data-delete-collection]').forEach(btn=>btn.onclick=()=>deleteCollection(btn.dataset.deleteCollection));
+  grid.querySelectorAll('[data-batch-collection]').forEach(btn=>btn.onclick=()=>openBatchCollection(btn.dataset.batchCollection));
 }
+async function openBatchCollection(name){batchCollectionName=name;batchBooks=await getAllBooks();batchSelected=new Set(batchBooks.filter(b=>(b.collections||[]).includes(name)).map(b=>b.id));$("#batchSearch").value="";renderBatchList();$("#collectionBatchModal").classList.remove("hidden")}
+function renderBatchList(){const q=$("#batchSearch").value.trim().toLowerCase();const list=$("#batchList");const shown=batchBooks.filter(b=>{const hay=[b.title,b.author,b.fileName,...(b.tags||[])].join(" ").toLowerCase();return !q||hay.includes(q)});list.innerHTML=shown.length?shown.map(b=>`<label class="batch-item"><input type="checkbox" data-batch-id="${esc(b.id)}" ${batchSelected.has(b.id)?"checked":""}><span class="batch-cover">${coverFor(b)}</span><span class="batch-copy"><strong>${esc(b.title)}</strong><small>${esc(b.author||"Sin autor")} · ${(b.type||"pdf").toUpperCase()}</small></span></label>`).join(""):'<div class="batch-empty">No encontré libros con esa búsqueda.</div>';list.querySelectorAll('[data-batch-id]').forEach(cb=>cb.onchange=()=>{if(cb.checked)batchSelected.add(cb.dataset.batchId);else batchSelected.delete(cb.dataset.batchId);updateBatchCount()});updateBatchCount()}
+function updateBatchCount(){$("#batchCount").textContent=`${batchSelected.size} seleccionado${batchSelected.size===1?"":"s"}`}
+function closeBatchCollection(){$("#collectionBatchModal").classList.add("hidden");batchCollectionName=null;batchBooks=[];batchSelected.clear()}
+async function saveBatchCollection(){if(!batchCollectionName)return;const savedName=batchCollectionName;for(const b of batchBooks){const has=batchSelected.has(b.id),old=(b.collections||[]);const next=has?[...new Set([...old,savedName])]:old.filter(c=>c!==savedName);if(next.join("\u0000")!==old.join("\u0000")){b.collections=next;b.updatedAt=Date.now();await putBook(b)}}closeBatchCollection();renderLibrary(await getAllBooks());if(currentView==="collections")renderCollectionsPage(await getAllBooks());toast(`Colección “${savedName}” actualizada.`)}
+
 async function renameCollection(oldName){
   const name=collectionLabel(prompt(`Nuevo nombre para “${oldName}”:`,oldName));
   if(!name||name===oldName)return;
@@ -150,6 +162,8 @@ function renderModalCollections(){
 }
 function renderModalTags(){$("#modalTags").innerHTML=modalTags.length?modalTags.map((t,i)=>`<span class="tag-edit-chip">#${esc(t)}<button data-i="${i}" type="button">✕</button></span>`).join(''):'<span class="book-meta">Sin tags todavía.</span>';$("#modalTags").querySelectorAll('button').forEach(x=>x.onclick=()=>{modalTags.splice(+x.dataset.i,1);renderModalTags()})}
 function updateFavoriteButton(){const on=!!modalBook?.favorite;$("#favoriteBook").textContent=on?'♥ En favoritos':'♡ Favorito';$("#favoriteBook").classList.toggle('on',on)}
+async function deleteCurrentBook(){if(!modalBook)return;const name=modalBook.title||modalBook.fileName||"este libro";if(!confirm(`¿Eliminar “${name}” de tu biblioteca?\n\nEl archivo se quitará de La Pulenta, pero no se borrará de tu dispositivo.`))return;const id=modalBook.id;await deleteBookById(id);modalBook=null;closeBookDetails();renderLibrary(await getAllBooks());toast("Libro eliminado de la biblioteca.")}
+
 function closeBookDetails(){$("#bookModal").classList.add('hidden');modalBook=null;modalTags=[]}
 async function saveBookDetails(){if(!modalBook)return;modalBook.title=$("#editTitle").value.trim()||modalBook.title;modalBook.author=$("#editAuthor").value.trim();modalBook.tags=[...new Set(modalTags.map(normTag).filter(Boolean))];modalBook.collections=[...new Set((modalBook.collections||[]).filter(c=>collections.includes(c)))];modalBook.updatedAt=Date.now();await putBook(modalBook);closeBookDetails();renderLibrary(await getAllBooks());toast('Cambios guardados.')}
 function fileUrl(f){if(currentObjectUrl)URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=URL.createObjectURL(f);return currentObjectUrl}
@@ -258,7 +272,9 @@ $("#filterPills").querySelectorAll('.filter-pill').forEach(b=>b.onclick=async()=
 $("#gridViewBtn").onclick=()=>{viewMode='grid';$("#gridViewBtn").classList.add('active');$("#listViewBtn").classList.remove('active');renderLibrary(lastBooks)};
 $("#listViewBtn").onclick=()=>{viewMode='list';$("#listViewBtn").classList.add('active');$("#gridViewBtn").classList.remove('active');renderLibrary(lastBooks)};
 let lastBooks=[];const originalRender=renderLibrary;renderLibrary=function(all){lastBooks=all;originalRender(all)};
-$("#modalClose").onclick=closeBookDetails;$("#bookModal").onclick=e=>{if(e.target===$("#bookModal"))closeBookDetails()};$("#saveBook").onclick=saveBookDetails;$("#favoriteBook").onclick=async()=>{if(!modalBook)return;modalBook.favorite=!modalBook.favorite;modalBook.updatedAt=Date.now();await putBook(modalBook);updateFavoriteButton();renderLibrary(await getAllBooks());toast(modalBook.favorite?'Añadido a favoritos.':'Quitado de favoritos.')};$("#addTag").onclick=()=>{const i=$("#newTag"),t=normTag(i.value);if(t&&!modalTags.includes(t)){modalTags.push(t);renderModalTags()}i.value='';i.focus()};$("#newTag").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#addTag").click()}};
+$("#themeToggle").onclick=toggleTheme;
+loadTheme();
+$("#modalClose").onclick=closeBookDetails;$("#deleteBook").onclick=deleteCurrentBook;$("#bookModal").onclick=e=>{if(e.target===$("#bookModal"))closeBookDetails()};$("#saveBook").onclick=saveBookDetails;$("#favoriteBook").onclick=async()=>{if(!modalBook)return;modalBook.favorite=!modalBook.favorite;modalBook.updatedAt=Date.now();await putBook(modalBook);updateFavoriteButton();renderLibrary(await getAllBooks());toast(modalBook.favorite?'Añadido a favoritos.':'Quitado de favoritos.')};$("#addTag").onclick=()=>{const i=$("#newTag"),t=normTag(i.value);if(t&&!modalTags.includes(t)){modalTags.push(t);renderModalTags()}i.value='';i.focus()};$("#newTag").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#addTag").click()}};
 $("#createCollection").onclick=()=>{const i=$("#newCollection"),name=collectionLabel(i.value);if(!name){i.focus();return}if(collections.some(c=>c.toLowerCase()===name.toLowerCase())){toast("Esa colección ya existe.");i.select();return}collections.push(name);collections.sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();if(modalBook){modalBook.collections=[...new Set([...(modalBook.collections||[]),name])]}i.value='';renderModalCollections();renderLibrary(lastBooks);toast(`Colección “${name}” creada y asignada.`)};
 $("#newCollection").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#createCollection").click()}};
 $("#showCollectionsBtn").onclick=async()=>{const b=$("#collectionBar");if(b.classList.contains('hidden'))renderCollectionBar(await getAllBooks());else{activeCollection=null;renderLibrary(await getAllBooks())}};

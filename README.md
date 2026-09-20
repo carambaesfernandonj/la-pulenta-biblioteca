@@ -10,3 +10,10 @@
 
 ## Instalación
 Reemplaza los archivos de la versión anterior en GitHub Pages. Los libros y datos están en IndexedDB/localStorage del navegador.
+
+
+## v0.9.1
+- Modo oscuro para la biblioteca (el lector conserva su propio aspecto).
+- Eliminación de libros desde la ficha sin borrar el archivo original del dispositivo.
+- Gestión por lotes: seleccionar varios libros desde Colecciones y añadir/quitar de una colección.
+- Se mantiene IndexedDB y la estructura de la v0.9.

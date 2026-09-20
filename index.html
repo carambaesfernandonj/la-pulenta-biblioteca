@@ -20,6 +20,7 @@
       <button class="nav-btn" data-view="collections" type="button">📚 Colecciones</button>
       <button class="nav-btn" data-view="library" type="button">🗂 Biblioteca</button>
     </nav>
+    <div class="theme-wrap"><button id="themeToggle" class="secondary theme-toggle" type="button" title="Cambiar modo de biblioteca">🌙 Modo oscuro</button></div>
     <div class="add-wrap">
       <button id="addBtn" class="primary" type="button">＋ Añadir</button>
       <div id="addMenu" class="add-menu hidden">
@@ -106,10 +107,22 @@
           <label>Autor<input id="editAuthor" type="text" placeholder="Opcional"></label>
           <div><div class="label">Tags</div><div id="modalTags" class="modal-tags"></div><div class="tag-editor"><input id="newTag" type="text" placeholder="Añadir tag…"><button id="addTag" class="secondary" type="button">＋</button></div></div>
           <div class="modal-collections"><div class="label">Colecciones</div><div id="modalCollections" class="modal-tags"></div><div class="collection-create"><input id="newCollection" type="text" placeholder="Nueva colección…"><button id="createCollection" class="secondary" type="button">＋ Crear</button></div></div>
-          <div class="modal-actions"><button id="saveBook" class="primary" type="button">Guardar cambios</button><button id="readBook" class="secondary" type="button">📖 Continuar leyendo</button></div>
+          <div class="modal-actions"><button id="saveBook" class="primary" type="button">Guardar cambios</button><button id="deleteBook" class="secondary danger-btn" type="button">🗑️ Eliminar libro</button><button id="readBook" class="secondary" type="button">📖 Continuar leyendo</button></div>
           <div class="modal-progress-wrap"><div class="modal-progress-head"><span>Progreso</span><strong id="modalProgressText">0%</strong></div><div class="modal-progress"><span id="modalProgressBar"></span></div></div><div id="modalMeta" class="modal-meta"></div>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div id="collectionBatchModal" class="batch-modal hidden" role="dialog" aria-modal="true" aria-labelledby="batchTitle">
+    <div class="batch-card">
+      <button id="batchClose" class="modal-close" type="button" aria-label="Cerrar">✕</button>
+      <div class="eyebrow">ORGANIZAR EN LOTE</div>
+      <h2 id="batchTitle">Añadir libros a la colección</h2>
+      <p class="batch-subtitle">Selecciona todos los libros que quieras añadir. Los que ya pertenecen a la colección aparecerán marcados.</p>
+      <div class="batch-toolbar"><label class="search"><span>🔎</span><input id="batchSearch" type="search" placeholder="Buscar libro…"></label><button id="batchSelectAll" class="secondary" type="button">Seleccionar todos</button><button id="batchClear" class="secondary" type="button">Limpiar</button></div>
+      <div id="batchList" class="batch-list"></div>
+      <div class="batch-footer"><span id="batchCount">0 seleccionados</span><div><button id="batchCancel" class="secondary" type="button">Cancelar</button><button id="batchSave" class="primary" type="button">Guardar selección</button></div></div>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
