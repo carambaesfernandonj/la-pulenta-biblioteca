@@ -298,7 +298,73 @@ async function openBook(id,books){
 }
 function wait(ms){return new Promise(r=>setTimeout(r,ms))}
 function setLoading(show,title='',detail='',cur=0,total=0,done=false){const p=$("#loadingPanel");if(!show){p.classList.add('hidden');return}p.classList.remove('hidden');$("#loadingTitle").textContent=title;$("#loadingDetail").textContent=detail;const t=Math.max(0,+total||0),c=Math.max(0,Math.min(+cur||0,t||+cur||0)),pct=done?100:t?Math.round(c/t*100):0;$("#loadingBar").style.width=pct+'%';$("#loadingCount").textContent=t?`${c} / ${t}`:'Preparando…';$("#loadingPercent").textContent=pct+'%';$("#loadingDone").classList.toggle('hidden',!done);$("#loadingHint").classList.toggle('hidden',done)}
-async function addFiles(fileList){const files=[...fileList].filter(f=>/\.(pdf|epub)$/i.test(f.name));if(!files.length){toast('No encontré PDF o EPUB en la selección.');return}$("#addMenu").classList.add('hidden');setLoading(true,'Añadiendo libros…','Preparando la importación',0,files.length);await wait(250);let added=0,skipped=0;for(const f of files){const lower=f.name.toLowerCase(),relativePath=f.webkitRelativePath||f.name,folders=relativePath.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))];try{let coverData=null,meta={};setLoading(true,'Preparando libro…',`Leyendo información: ${f.name}`,added,files.length);if(lower.endsWith('.pdf')){coverData=await generatePdfCover(f);meta=await extractPdfMetadata(f)}else{meta=await extractEpubMetadata(f);coverData=meta.coverData||null}await putBook({id:makeId(),title:meta.title||titleFromFilename(f.name),fileName:f.name,type:lower.endsWith('.epub')?'epub':'pdf',source:'local',file:f,relativePath,progress:0,cfi:null,tags,collections:[],favorite:false,author:meta.author||'',language:meta.language||'',publisher:meta.publisher||'',description:meta.description||'',coverData,metadataScanned:true,lastOpenedAt:0,updatedAt:Date.now()});added++;setLoading(true,'Añadiendo libros…',`Procesando: ${f.name}`,added,files.length);await wait(45)}catch(e){console.error(e);skipped++;setLoading(true,'Añadiendo libros…',`No se pudo añadir: ${f.name}`,added,files.length);await wait(120)}}renderLibrary(await getAllBooks());setLoading(true,'✓ Importación completada',`${added} añadido${added===1?'':'s'}${skipped?` · ${skipped} con problemas`:''}`,files.length,files.length,true);await wait(1600);setLoading(false);toast(skipped?`${added} libros añadidos · ${skipped} con problemas.`:`${added} libro${added===1?'':'s'} añadido${added===1?'':'s'} a tu biblioteca.`)}
+async function addFiles(fileList){
+  const files=[...fileList].filter(f=>/\.(pdf|epub)$/i.test(f.name));
+  if(!files.length){toast('No encontré PDF o EPUB en la selección.');return}
+  $("#addMenu").classList.add('hidden');
+  setLoading(true,'Añadiendo libros…','Preparando la importación',0,files.length);
+  await wait(150);
+  let added=0, skipped=0;
+
+  for(const f of files){
+    const lower=f.name.toLowerCase();
+    const relativePath=f.webkitRelativePath||f.name;
+    const folders=relativePath.split('/').slice(0,-1);
+    const tags=[...new Set(folders.map(normTag).filter(Boolean))];
+    const book={
+      id:makeId(), title:titleFromFilename(f.name), fileName:f.name,
+      type:lower.endsWith('.epub')?'epub':'pdf', source:'local', file:f,
+      relativePath, progress:0, cfi:null, tags, collections:[], favorite:false,
+      author:'', language:'', publisher:'', description:'', coverData:null,
+      metadataScanned:false, lastOpenedAt:0, updatedAt:Date.now()
+    };
+
+    try{
+      // IMPORTANTE: guardar el libro primero. La metadata/portada nunca puede
+      // bloquear la importación ni hacer desaparecer un libro de la biblioteca.
+      await putBook(book);
+      added++;
+      setLoading(true,'Añadiendo libros…',`Añadido: ${f.name}`,added,files.length);
+      await wait(45);
+
+      // Enriquecimiento posterior: si PDF.js/JSZip falla, el libro ya quedó guardado.
+      try{
+        let meta={};
+        if(lower.endsWith('.pdf')){
+          meta=await extractPdfMetadata(f);
+          if(meta.title||meta.author||meta.language||meta.publisher||meta.description){
+            Object.assign(book,meta);
+          }
+          try{book.coverData=await generatePdfCover(f)}catch(e){console.warn('Portada PDF:',e)}
+        }else{
+          meta=await extractEpubMetadata(f);
+          Object.assign(book,meta);
+          if(meta.coverData)book.coverData=meta.coverData;
+        }
+        book.metadataScanned=true;
+        book.updatedAt=Date.now();
+        await putBook(book);
+      }catch(e){
+        console.warn('Enriquecimiento del libro omitido:',f.name,e);
+        try{book.metadataScanned=true;await putBook(book)}catch(inner){console.warn('No se pudo actualizar metadata:',inner)}
+      }
+    }catch(e){
+      console.error('No se pudo guardar el libro:',f.name,e);
+      skipped++;
+      setLoading(true,'Añadiendo libros…',`No se pudo añadir: ${f.name}`,added+skipped,files.length);
+      await wait(120);
+    }
+  }
+
+  await renderLibrary(await getAllBooks());
+  const detail=skipped
+    ? `${added} añadido${added===1?'':'s'} · ${skipped} con problemas`
+    : `${added} libro${added===1?'':'s'} añadido${added===1?'':'s'} a tu biblioteca.`;
+  setLoading(true,'✓ Importación completada',detail,files.length,files.length,true);
+  await wait(1300);
+  setLoading(false);
+  toast(skipped?`${added} libros añadidos · ${skipped} con problemas.`:`${added} libro${added===1?'':'s'} añadido${added===1?'':'s'} a tu biblioteca.`);
+}
 $("#addBtn").onclick=()=>$("#addMenu").classList.toggle('hidden');$("#addFilesBtn").onclick=()=>{$("#addMenu").classList.add('hidden');$("#fileInput").click()};$("#addFolderBtn").onclick=()=>{$("#addMenu").classList.add('hidden');$("#folderInput").click()};$("#emptyAddBtn").onclick=()=>$("#fileInput").click();$("#fileInput").onchange=async e=>{await addFiles(e.target.files);e.target.value=''};$("#folderInput").onchange=async e=>{await addFiles(e.target.files);e.target.value=''};
 document.addEventListener('click',e=>{if(!e.target.closest('.add-wrap'))$("#addMenu").classList.add('hidden')});
 $("#showTagsBtn").onclick=async()=>{const b=$("#tagBar");if(b.classList.contains('hidden'))renderTagBar(await getAllBooks());else{activeTag=null;renderLibrary(await getAllBooks())}};
