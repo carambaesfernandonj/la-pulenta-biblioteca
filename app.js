@@ -277,6 +277,14 @@ loadTheme();
 $("#modalClose").onclick=closeBookDetails;$("#deleteBook").onclick=deleteCurrentBook;$("#bookModal").onclick=e=>{if(e.target===$("#bookModal"))closeBookDetails()};$("#saveBook").onclick=saveBookDetails;$("#favoriteBook").onclick=async()=>{if(!modalBook)return;modalBook.favorite=!modalBook.favorite;modalBook.updatedAt=Date.now();await putBook(modalBook);updateFavoriteButton();renderLibrary(await getAllBooks());toast(modalBook.favorite?'Añadido a favoritos.':'Quitado de favoritos.')};$("#addTag").onclick=()=>{const i=$("#newTag"),t=normTag(i.value);if(t&&!modalTags.includes(t)){modalTags.push(t);renderModalTags()}i.value='';i.focus()};$("#newTag").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#addTag").click()}};
 $("#createCollection").onclick=()=>{const i=$("#newCollection"),name=collectionLabel(i.value);if(!name){i.focus();return}if(collections.some(c=>c.toLowerCase()===name.toLowerCase())){toast("Esa colección ya existe.");i.select();return}collections.push(name);collections.sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();if(modalBook){modalBook.collections=[...new Set([...(modalBook.collections||[]),name])]}i.value='';renderModalCollections();renderLibrary(lastBooks);toast(`Colección “${name}” creada y asignada.`)};
 $("#newCollection").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#createCollection").click()}};
+// Controles de selección por lote
+$("#batchClose").onclick=closeBatchCollection;
+$("#batchCancel").onclick=closeBatchCollection;
+$("#batchSave").onclick=saveBatchCollection;
+$("#batchSearch").oninput=()=>renderBatchList();
+$("#batchSelectAll").onclick=()=>{batchBooks.filter(b=>{const q=$("#batchSearch").value.trim().toLowerCase();const hay=[b.title,b.author,b.fileName,...(b.tags||[])].join(" ").toLowerCase();return !q||hay.includes(q)}).forEach(b=>batchSelected.add(b.id));renderBatchList()};
+$("#batchClear").onclick=()=>{batchSelected.clear();renderBatchList()};
+$("#collectionBatchModal").onclick=e=>{if(e.target===$("#collectionBatchModal"))closeBatchCollection()};
 $("#showCollectionsBtn").onclick=async()=>{const b=$("#collectionBar");if(b.classList.contains('hidden'))renderCollectionBar(await getAllBooks());else{activeCollection=null;renderLibrary(await getAllBooks())}};
 document.querySelectorAll(".nav-btn").forEach(b=>b.onclick=()=>showView(b.dataset.view));
 $("#homeLibraryBtn").onclick=()=>showView("library");
