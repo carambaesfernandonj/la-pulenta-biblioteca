@@ -18,7 +18,7 @@ La biblioteca, colecciones, tags, metadata, favoritos y backup se mantienen.
 ## PDF Reader: portada como primera página
 En modo doble página puedes activar **Portada sola** para mostrar la página 1 por separado y comenzar los pares en 2–3, 4–5, etc. La preferencia se guarda por libro.
 
-## v1.1 — El Pulento Player
+## v1.1.1 — El Pulento Player
 
 Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real con SpeechSynthesis del navegador/dispositivo; no se crean ni guardan MP3 u otros archivos de audio.
 

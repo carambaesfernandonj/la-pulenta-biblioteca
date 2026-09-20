@@ -359,12 +359,27 @@ async function playerLoadBook(id){
   playerCancelSpeech();
   const books=await getAllBooks();const b=books.find(x=>x.id===id);if(!b)return;
   if(b.type!=='epub'){toast('El Pulento Player comenzará con EPUB. PDF llegará en una siguiente etapa.');return}
-  $('#playerEmpty').classList.add('hidden');$('#playerNow').classList.remove('hidden');$('#playerChapter').textContent='Preparando texto…';$('#playerChapterMeta').textContent='';
+  $('#playerEmpty').classList.add('hidden');$('#playerNow').classList.remove('hidden');
+  $('#playerChapter').textContent='Preparando texto…';$('#playerChapterMeta').textContent='';
   playerState={...playerState,book:b,bookEngine:null,chapters:[],chapterIndex:Math.max(0,b.audioChapter||0),chunkIndex:Math.max(0,b.audioChunk||0),speaking:false,paused:false};
-  try{playerState.chapters=await extractEpubChapters(b);playerState.chapterIndex=Math.min(playerState.chapterIndex,playerState.chapters.length-1);playerState.chunkIndex=Math.min(playerState.chunkIndex,Math.max(0,playerState.chapters[playerState.chapterIndex].chunks.length-1));playerSetUI();await playerPersist()}catch(e){console.error(e);$('#playerNow').classList.add('hidden');$('#playerEmpty').classList.remove('hidden');toast('No pude preparar este EPUB para escucharlo.')}
+  try{
+    playerState.chapters=await extractEpubChapters(b);
+    if(!playerState.chapters.length)throw new Error('El EPUB no contiene secciones con texto legible.');
+    playerState.chapterIndex=Math.min(playerState.chapterIndex,playerState.chapters.length-1);
+    const currentChapter=playerState.chapters[playerState.chapterIndex];
+    playerState.chunkIndex=Math.min(playerState.chunkIndex,Math.max(0,currentChapter.chunks.length-1));
+    playerSetUI();
+    await playerPersist();
+    document.querySelectorAll('[data-player-id]').forEach(x=>x.classList.toggle('active',x.dataset.playerId===b.id));
+  }catch(e){
+    console.error('Pulento Player: error preparando EPUB',e);
+    $('#playerNow').classList.add('hidden');$('#playerEmpty').classList.remove('hidden');
+    toast(`No pude preparar el EPUB: ${e?.message||'error desconocido'}`);
+  }
 }
 async function showPlayer(){
-  showView('player');
+  // showPlayer solo prepara el contenido del reproductor.
+  // NO llama a showView('player') porque showView ya nos trajo aquí.
   const books=await getAllBooks();const epubs=books.filter(b=>b.type==='epub');
   $('#playerBookCount').textContent=String(epubs.length);
   $('#playerBookList').innerHTML=epubs.length?epubs.map(b=>`<button class="player-book-item ${playerState.book?.id===b.id?'active':''}" data-player-id="${esc(b.id)}" type="button"><span class="player-mini-cover">${b.coverData?`<img src="${b.coverData}" alt="">`:'📖'}</span><span><strong>${esc(b.title)}</strong><small>${esc(b.author||'Sin autor')} · ${Math.round((b.audioProgress||0)*100)}% escuchado</small></span></button>`).join(''):'<div class="player-list-empty">No tienes EPUB todavía.<br>Añade un EPUB a tu biblioteca y aparecerá aquí.</div>';
