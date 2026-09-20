@@ -310,7 +310,7 @@ function updateReaderInfo(){
   }
 }
 const pdfState={};
-function setPdfStateDefaults(){pdfState.doc=null;pdfState.page=1;pdfState.double=false;pdfState.coverFirst=false;pdfState.zoom=1;pdfState.fit=true;pdfState.renderToken=0;pdfState.swipeX=0;pdfState.swipeY=0}
+function setPdfStateDefaults(){pdfState.doc=null;pdfState.page=1;pdfState.double=false;pdfState.coverFirst=false;pdfState.zoom=1;pdfState.fit=true;pdfState.renderToken=0;pdfState.swipeX=0;pdfState.swipeY=0;pdfState.cache=new Map();pdfState.prefetching=new Set();pdfState.viewportKey=''}
 async function openPdfReader(b){
   if(!window.pdfjsLib)throw new Error('PDF.js no está disponible');
   setPdfStateDefaults();
@@ -329,26 +329,37 @@ async function openPdfReader(b){
   document.getElementById('pdfReaderControls').classList.remove('hidden');
   const single=document.getElementById('pdfSingleBtn'), dbl=document.getElementById('pdfDoubleBtn'), cover=document.getElementById('pdfCoverFirstBtn');
   single.classList.toggle('active',!pdfState.double);dbl.classList.toggle('active',pdfState.double);cover.classList.toggle('active',pdfState.double&&pdfState.coverFirst);cover.disabled=!pdfState.double;
+  const cacheKey=(num,scale)=>`${num}|${Math.round(scale*1000)}`;
+  const invalidateCache=()=>{for(const item of pdfState.cache.values()){try{item.bitmap?.close?.()}catch(e){}}pdfState.cache.clear();pdfState.viewportKey=''};
+  const renderOne=async(num,scale,dpr,token,allowCache=true)=>{
+    const page=await pdfState.doc.getPage(num);if(token!==pdfState.renderToken)return null;
+    const viewport=page.getViewport({scale});const key=cacheKey(num,scale);
+    const wrap=document.createElement('div');wrap.className='pdf-page-wrap'+(pdfState.double?'':' single');
+    const canvas=document.createElement('canvas');canvas.className='pdf-page';canvas.width=Math.ceil(viewport.width*dpr);canvas.height=Math.ceil(viewport.height*dpr);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;wrap.appendChild(canvas);
+    const cached=allowCache?pdfState.cache.get(key):null;
+    if(cached?.bitmap){canvas.getContext('2d',{alpha:false}).drawImage(cached.bitmap,0,0,canvas.width,canvas.height);return wrap}
+    const ctx=canvas.getContext('2d',{alpha:false});const renderViewport=page.getViewport({scale:scale*dpr});await page.render({canvasContext:ctx,viewport:renderViewport}).promise;
+    if(token!==pdfState.renderToken)return null;
+    try{const bitmap=await createImageBitmap(canvas);pdfState.cache.set(key,{bitmap,width:canvas.width,height:canvas.height})}catch(e){}
+    return wrap;
+  };
+  const prefetch=async(nums,scale,dpr)=>{
+    const unique=[...new Set(nums)].filter(n=>n>=1&&n<=pdfState.doc.numPages);
+    for(const num of unique){const key=cacheKey(num,scale);if(pdfState.cache.has(key)||pdfState.prefetching.has(key))continue;pdfState.prefetching.add(key);try{const page=await pdfState.doc.getPage(num);const viewport=page.getViewport({scale});const canvas=document.createElement('canvas');canvas.width=Math.ceil(viewport.width*dpr);canvas.height=Math.ceil(viewport.height*dpr);const ctx=canvas.getContext('2d',{alpha:false});await page.render({canvasContext:ctx,viewport:page.getViewport({scale:scale*dpr})}).promise;const bitmap=await createImageBitmap(canvas);pdfState.cache.set(key,{bitmap,width:canvas.width,height:canvas.height})}catch(e){}finally{pdfState.prefetching.delete(key)}}
+  };
   const render=async()=>{
     const token=++pdfState.renderToken;spread.innerHTML='';
     const pages=pdfState.double?(pdfState.coverFirst && pdfState.page===1?[1]:[pdfState.page,Math.min(pdfState.page+1,pdfState.doc.numPages)]):[pdfState.page];
     const unique=[...new Set(pages)].filter(n=>n>=1&&n<=pdfState.doc.numPages);
-    for(const num of unique){
-      const page=await pdfState.doc.getPage(num);if(token!==pdfState.renderToken)return;
-      const base=page.getViewport({scale:1});
-      const boxW=Math.max(240,stage.clientWidth*(pdfState.double?.47:.94));
-      const boxH=Math.max(240,stage.clientHeight*.91);
-      const fitScale=Math.min(boxW/base.width,boxH/base.height);
-      const scale=pdfState.fit?fitScale:fitScale*pdfState.zoom;
-      const viewport=page.getViewport({scale});
-      const wrap=document.createElement('div');wrap.className='pdf-page-wrap'+(pdfState.double?'':' single');
-      const canvas=document.createElement('canvas');canvas.className='pdf-page';
-      const dpr=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.ceil(viewport.width*dpr);canvas.height=Math.ceil(viewport.height*dpr);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;
-      wrap.appendChild(canvas);spread.appendChild(wrap);
-      const ctx=canvas.getContext('2d',{alpha:false});const renderViewport=page.getViewport({scale:scale*dpr});await page.render({canvasContext:ctx,viewport:renderViewport}).promise;
-    }
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    const scales=[];
+    for(const num of unique){const base=(await pdfState.doc.getPage(num)).getViewport({scale:1});const boxW=Math.max(240,stage.clientWidth*(pdfState.double?.47:.94));const boxH=Math.max(240,stage.clientHeight*.91);const fitScale=Math.min(boxW/base.width,boxH/base.height);scales.push(pdfState.fit?fitScale:fitScale*pdfState.zoom)}
+    for(let i=0;i<unique.length;i++){const wrap=await renderOne(unique[i],scales[i],dpr,token,true);if(token!==pdfState.renderToken)return;if(wrap)spread.appendChild(wrap)}
     const shownLabel=pdfState.double?(pdfState.coverFirst&&pdfState.page===1?'Portada':(pdfState.page<pdfState.doc.numPages?`Páginas ${pdfState.page}–${pdfState.page+1}`:`Página ${pdfState.page}`)):`Página ${pdfState.page}`;info.textContent=`${shownLabel} · ${pdfState.doc.numPages} · ${Math.round((pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1)*100)}%`;
     const pct=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);b.pdfPage=pdfState.page;b.pdfDouble=pdfState.double;b.pdfCoverFirst=pdfState.coverFirst;b.pdfZoom=pdfState.zoom;b.progress=Math.max(0,Math.min(1,pct));b.updatedAt=Date.now();currentBook=b;try{await putBook(b)}catch(e){}updateReaderInfo();
+    const nextStart=pdfState.double?(pdfState.coverFirst&&pdfState.page===1?2:pdfState.page+2):pdfState.page+1;
+    const nextNums=pdfState.double?[nextStart,nextStart+1,nextStart+2]:[nextStart,nextStart+1];
+    const preScale=scales[0]||1;prefetch(nextNums,preScale,dpr);
   };
   pdfState.render=render;
   const goPrev=async()=>{if(pdfState.double&&pdfState.coverFirst){pdfState.page=pdfState.page===1?1:(pdfState.page===2?1:Math.max(2,pdfState.page-2));}else{pdfState.page=Math.max(1,pdfState.page-(pdfState.double?2:1));}pdfState.fit=true;await render()};
@@ -357,14 +368,14 @@ async function openPdfReader(b){
   document.getElementById('pdfSingleBtn').onclick=async()=>{pdfState.double=false;pdfState.coverFirst=false;document.getElementById('pdfSingleBtn').classList.add('active');document.getElementById('pdfDoubleBtn').classList.remove('active');document.getElementById('pdfCoverFirstBtn').classList.remove('active');document.getElementById('pdfCoverFirstBtn').disabled=true;await render()};
   document.getElementById('pdfDoubleBtn').onclick=async()=>{pdfState.double=true;if(pdfState.coverFirst){pdfState.page=pdfState.page===1?1:(pdfState.page%2!==0?Math.max(2,pdfState.page-1):pdfState.page);}else if(pdfState.page%2===0&&pdfState.page>1)pdfState.page--;document.getElementById('pdfDoubleBtn').classList.add('active');document.getElementById('pdfSingleBtn').classList.remove('active');document.getElementById('pdfCoverFirstBtn').disabled=false;await render()};
   document.getElementById('pdfCoverFirstBtn').onclick=async()=>{if(!pdfState.double)return;pdfState.coverFirst=!pdfState.coverFirst;if(pdfState.coverFirst){if(pdfState.page>1&&pdfState.page%2!==0)pdfState.page=Math.max(2,pdfState.page-1);}else if(pdfState.page===1){pdfState.page=1;}document.getElementById('pdfCoverFirstBtn').classList.toggle('active',pdfState.coverFirst);await render()};
-  document.getElementById('pdfZoomOutBtn').onclick=async()=>{pdfState.fit=false;pdfState.zoom=Math.max(.65,pdfState.zoom-.2);await render()};
-  document.getElementById('pdfZoomInBtn').onclick=async()=>{pdfState.fit=false;pdfState.zoom=Math.min(3,pdfState.zoom+.2);await render()};
-  document.getElementById('pdfFitBtn').onclick=async()=>{pdfState.fit=true;pdfState.zoom=1;await render()};
+  document.getElementById('pdfZoomOutBtn').onclick=async()=>{invalidateCache();pdfState.fit=false;pdfState.zoom=Math.max(.65,pdfState.zoom-.2);await render()};
+  document.getElementById('pdfZoomInBtn').onclick=async()=>{invalidateCache();pdfState.fit=false;pdfState.zoom=Math.min(3,pdfState.zoom+.2);await render()};
+  document.getElementById('pdfFitBtn').onclick=async()=>{invalidateCache();pdfState.fit=true;pdfState.zoom=1;await render()};
   document.getElementById('pdfFullscreenBtn').onclick=async()=>{try{await document.getElementById('reader').requestFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
   stage.addEventListener('pointerdown',e=>{pdfState.swipeX=e.clientX;pdfState.swipeY=e.clientY});
   stage.addEventListener('pointerup',async e=>{const dx=e.clientX-pdfState.swipeX,dy=e.clientY-pdfState.swipeY;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2){if(dx<0)await goNext();else await goPrev()}});
   document.getElementById('saveProgressBtn').onclick=async()=>{if(currentBook){currentBook.pdfPage=pdfState.page;currentBook.progress=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);currentBook.updatedAt=Date.now();await putBook(currentBook);toast('Posición guardada.');updateReaderInfo()}};
-  const onResize=()=>{if(!document.getElementById('reader').classList.contains('hidden'))render()};window.addEventListener('resize',onResize,{passive:true});pdfState.cleanup=()=>window.removeEventListener('resize',onResize);
+  const onResize=()=>{if(!document.getElementById('reader').classList.contains('hidden')){invalidateCache();render()}};window.addEventListener('resize',onResize,{passive:true});pdfState.cleanup=()=>window.removeEventListener('resize',onResize);
   stage.addEventListener('dblclick',async()=>{pdfState.fit=!pdfState.fit;await render()});
   stage.focus();await render();
 }
