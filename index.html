@@ -157,11 +157,20 @@
       <h2 id="backupTitle">Respaldo de La Pulenta</h2>
       <p class="batch-subtitle">Guarda una copia de tus libros, colecciones, tags, favoritos, metadata y progreso. El respaldo no modifica tu biblioteca actual.</p>
       <div class="backup-actions">
-        <button id="exportBackupBtn" class="primary" type="button">⬇️ Exportar respaldo</button>
-        <button id="importBackupBtn" class="secondary" type="button">⬆️ Importar respaldo</button>
+        <button id="exportBackupBtn" class="primary" type="button">⬇️ Respaldo completo</button>
+        <button id="importBackupBtn" class="secondary" type="button">⬆️ Restaurar completo</button>
+      </div>
+      <div class="backup-actions backup-actions-light">
+        <button id="exportLocationBackupBtn" class="secondary" type="button">🗂️ Respaldo liviano</button>
+        <button id="importLocationBackupBtn" class="secondary" type="button">📁 Restaurar desde carpeta</button>
       </div>
       <input id="backupInput" type="file" accept=".zip,application/zip" hidden>
-      <div class="backup-note">Al importar, los libros del respaldo se agregan o actualizan por su ID. No se borran los libros que ya tengas fuera del respaldo.</div>
+      <input id="locationBackupInput" type="file" accept=".zip,application/zip" hidden>
+      <input id="folderFallbackInput" type="file" webkitdirectory directory multiple hidden>
+      <div class="backup-note">
+        <b>Respaldo completo:</b> incluye los PDF/EPUB dentro del ZIP.<br>
+        <b>Respaldo liviano:</b> guarda solo biblioteca, metadatos, progreso y ubicaciones relativas. Al restaurarlo eliges la carpeta donde están tus libros y La Pulenta intenta reencontrarlos automáticamente.
+      </div>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

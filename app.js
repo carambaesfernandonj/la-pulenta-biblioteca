@@ -107,6 +107,89 @@ async function importLibraryBackup(file){
     closeBackupModal();
   }catch(e){console.error('Backup import:',e);setLoading(false);toast(`No pude importar el respaldo: ${e.message||'archivo inválido'}`)}
 }
+function normalizeRelativePath(value){return String(value||'').replace(/\\/g,'/').split('/').filter(Boolean).join('/').replace(/^\.\//,'').toLowerCase()}
+function baseName(path){const p=normalizeRelativePath(path);return p.split('/').pop()||''}
+async function exportLocationBackup(){
+  if(typeof JSZip==='undefined'){toast('No está disponible el sistema de respaldo.');return}
+  try{
+    const books=await getAllBooks();
+    if(!books.length&&!collections.length){toast('No hay datos de biblioteca para respaldar.');return}
+    setLoading(true,'Creando respaldo liviano…','Preparando ubicaciones y metadatos',0,Math.max(1,books.length));
+    const zip=new JSZip();
+    const manifest={format:'la-pulenta-biblioteca-location-backup',version:1,createdAt:new Date().toISOString(),collections:[...collections],theme:localStorage.getItem('pulenta_theme')||'light',books:[]};
+    for(let i=0;i<books.length;i++){
+      const b=books[i],copy={...b};
+      delete copy.file;delete copy.backupFile;
+      copy.relativePath=normalizeRelativePath(b.relativePath||b.fileName||'');
+      copy.locationOnly=true;
+      manifest.books.push(copy);
+      setLoading(true,'Creando respaldo liviano…',`Registrando: ${b.title||b.fileName||'libro'}`,i+1,books.length);await wait(0);
+    }
+    zip.file('pulenta-location-backup.json',JSON.stringify(manifest,null,2));
+    const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE',compressionOptions:{level:6}});
+    const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`la-pulenta-respaldo-liviano-${stamp}.zip`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1500);
+    setLoading(true,'✓ Respaldo liviano listo','No incluye los PDF/EPUB originales.',books.length,books.length,true);await wait(1200);setLoading(false);toast('Respaldo liviano descargado.');
+  }catch(e){console.error('Location backup export:',e);setLoading(false);toast('No pude crear el respaldo liviano.')}
+}
+async function readLocationManifest(file){
+  const zip=await JSZip.loadAsync(file),mf=zip.file('pulenta-location-backup.json');
+  if(!mf)throw new Error('No encontré pulenta-location-backup.json');
+  const manifest=JSON.parse(await mf.async('text'));
+  if(manifest.format!=='la-pulenta-biblioteca-location-backup')throw new Error('El archivo no parece un respaldo liviano de La Pulenta.');
+  if(!Array.isArray(manifest.books))throw new Error('El respaldo no contiene libros válidos.');
+  return manifest;
+}
+async function scanDirectoryHandle(handle,prefix='',map=new Map()){
+  for await(const [name,entry] of handle.entries()){
+    const rel=prefix?`${prefix}/${name}`:name;
+    if(entry.kind==='file'&&/\.(pdf|epub)$/i.test(name)){try{map.set(normalizeRelativePath(rel),await entry.getFile())}catch(e){console.warn('No pude leer',rel,e)}}
+    else if(entry.kind==='directory')await scanDirectoryHandle(entry,rel,map);
+  }
+  return map;
+}
+function scanFolderInput(files){
+  const map=new Map();
+  for(const file of [...files||[]]){if(!/\.(pdf|epub)$/i.test(file.name))continue;let rel=file.webkitRelativePath||file.name;const parts=rel.split('/').filter(Boolean);if(parts.length>1)rel=parts.slice(1).join('/');map.set(normalizeRelativePath(rel),file)}
+  return map;
+}
+function matchLocationFile(meta,map){
+  const wanted=normalizeRelativePath(meta.relativePath||meta.fileName||'');
+  if(wanted&&map.has(wanted))return {file:map.get(wanted),path:wanted,mode:'ruta'};
+  const name=baseName(wanted||meta.fileName),candidates=[];
+  if(!name)return null;
+  for(const [path,file] of map.entries())if(baseName(path)===name)candidates.push([path,file]);
+  return candidates.length===1?{file:candidates[0][1],path:candidates[0][0],mode:'nombre'}:null;
+}
+async function importLocationBackup(file){
+  if(!file||typeof JSZip==='undefined')return;
+  try{
+    setLoading(true,'Preparando restauración…','Leyendo respaldo liviano',0,1);
+    const manifest=await readLocationManifest(file);pendingLocationManifest=manifest;setLoading(false);
+    if('showDirectoryPicker' in window){const handle=await window.showDirectoryPicker({mode:'read'});await restoreLocationManifest(manifest,await scanDirectoryHandle(handle));pendingLocationManifest=null}
+    else{$('#folderFallbackInput').click()}
+  }catch(e){pendingLocationManifest=null;setLoading(false);if(e?.name==='AbortError')return;console.error('Location backup import:',e);toast(`No pude preparar la restauración: ${e.message||'archivo inválido'}`)}
+}
+let pendingLocationManifest=null;
+async function restoreLocationManifest(manifest,map){
+  try{
+    const backupCollections=Array.isArray(manifest.collections)?manifest.collections.filter(Boolean):[];
+    collections=[...new Set([...collections,...backupCollections])].sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();
+    const existingById=new Map((await getAllBooks()).map(b=>[b.id,b]));let restored=0,missing=0,byName=0;
+    setLoading(true,'Restaurando biblioteca…','Buscando tus libros en la carpeta seleccionada',0,Math.max(1,manifest.books.length));
+    for(let i=0;i<manifest.books.length;i++){
+      const meta=manifest.books[i],existing=existingById.get(meta.id),copy={...meta};delete copy.backupFile;delete copy.locationOnly;
+      const match=matchLocationFile(meta,map);
+      if(match){copy.file=match.file;copy.relativePath=match.path;copy.missingFile=false;restored++;if(match.mode==='nombre')byName++}
+      else if(existing?.file instanceof Blob){copy.file=existing.file;copy.missingFile=false;restored++}
+      else{delete copy.file;copy.missingFile=true;missing++}
+      await putBook(copy);setLoading(true,'Restaurando biblioteca…',match?`Vinculando: ${copy.title||copy.fileName||'libro'}`:`No encontrado: ${copy.title||copy.fileName||'libro'}`,i+1,manifest.books.length);await wait(0);
+    }
+    if(manifest.theme==='dark'||manifest.theme==='light'){localStorage.setItem('pulenta_theme',manifest.theme);loadTheme()}
+    renderLibrary(await getAllBooks());
+    setLoading(true,'✓ Restauración completada',`${restored} encontrados${missing?` · ${missing} no encontrados`:''}${byName?` · ${byName} por nombre`:''}`,manifest.books.length,manifest.books.length,true);await wait(1600);setLoading(false);toast(missing?`${restored} encontrados · ${missing} no encontrados.`:`${restored} libros vinculados correctamente.`);closeBackupModal();
+  }catch(e){console.error('Location restore:',e);setLoading(false);toast(`No pude restaurar la biblioteca: ${e.message||'error desconocido'}`)}
+}
 function openBackupModal(){$('#backupModal').classList.remove('hidden')}
 function closeBackupModal(){$('#backupModal').classList.add('hidden')}
 
@@ -636,6 +719,10 @@ $("#backupModal").onclick=e=>{if(e.target===$("#backupModal"))closeBackupModal()
 $("#exportBackupBtn").onclick=exportLibraryBackup;
 $("#importBackupBtn").onclick=()=>$("#backupInput").click();
 $("#backupInput").onchange=async e=>{const f=e.target.files?.[0];if(f){if(confirm("¿Importar este respaldo? Los libros del respaldo se agregarán o actualizarán. Los demás libros no se borrarán."))await importLibraryBackup(f)}e.target.value=""};
+$("#exportLocationBackupBtn").onclick=exportLocationBackup;
+$("#importLocationBackupBtn").onclick=()=>$("#locationBackupInput").click();
+$("#locationBackupInput").onchange=async e=>{const f=e.target.files?.[0];if(f)await importLocationBackup(f);e.target.value=""};
+$("#folderFallbackInput").onchange=async e=>{const files=e.target.files,manifest=pendingLocationManifest;pendingLocationManifest=null;if(manifest&&files?.length)await restoreLocationManifest(manifest,scanFolderInput(files));e.target.value=""};
 loadTheme();
 $("#modalClose").onclick=closeBookDetails;$("#deleteBook").onclick=deleteCurrentBook;$("#bookModal").onclick=e=>{if(e.target===$("#bookModal"))closeBookDetails()};$("#saveBook").onclick=saveBookDetails;$("#favoriteBook").onclick=async()=>{if(!modalBook)return;modalBook.favorite=!modalBook.favorite;modalBook.updatedAt=Date.now();await putBook(modalBook);updateFavoriteButton();renderLibrary(await getAllBooks());toast(modalBook.favorite?'Añadido a favoritos.':'Quitado de favoritos.')};$("#addTag").onclick=()=>{const i=$("#newTag"),t=normTag(i.value);if(t&&!modalTags.includes(t)){modalTags.push(t);renderModalTags()}i.value='';i.focus()};$("#newTag").onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();$("#addTag").click()}};
 $("#createCollection").onclick=()=>{const i=$("#newCollection"),name=collectionLabel(i.value);if(!name){i.focus();return}if(collections.some(c=>c.toLowerCase()===name.toLowerCase())){toast("Esa colección ya existe.");i.select();return}collections.push(name);collections.sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();if(modalBook){modalBook.collections=[...new Set([...(modalBook.collections||[]),name])]}i.value='';renderModalCollections();renderLibrary(lastBooks);toast(`Colección “${name}” creada y asignada.`)};

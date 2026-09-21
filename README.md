@@ -36,3 +36,10 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Línea de tiempo interactiva para saltar por bloques de texto.
 - Progreso de escucha persistente y sincronizado con la posición seleccionada.
 - La línea de tiempo representa bloques de texto, no segundos exactos, porque SpeechSynthesis no expone una posición temporal fiable del audio.
+
+## v1.2 — respaldo liviano por ubicaciones
+- Se mantiene el respaldo completo anterior, que incluye los archivos PDF/EPUB.
+- Nuevo respaldo liviano: guarda biblioteca, metadatos, tags, colecciones, favoritos y progreso, junto con la `relativePath` de cada libro, pero no copia los PDF/EPUB.
+- Restauración liviana: selecciona el respaldo y luego la carpeta raíz donde están los libros. La Pulenta recorre subcarpetas y vincula primero por ruta relativa y, si la ruta cambió, por nombre de archivo cuando el nombre es único.
+- Los libros que no se encuentren no se eliminan: quedan registrados para poder volver a vincularlos posteriormente.
+- En navegadores sin `showDirectoryPicker`, se usa el selector de carpeta basado en `webkitdirectory` como alternativa.
