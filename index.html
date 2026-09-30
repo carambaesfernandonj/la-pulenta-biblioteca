@@ -24,12 +24,12 @@
     <div class="add-wrap">
       <button id="addBtn" class="primary" type="button">＋ Añadir</button>
       <div id="addMenu" class="add-menu hidden">
-        <button id="addFilesBtn" type="button">📄 Archivos PDF / EPUB</button>
+        <button id="addFilesBtn" type="button">📄 Archivos PDF / EPUB / CBR / CBZ</button>
         <button id="addFolderBtn" type="button">📁 Carpeta completa</button>
       </div>
     </div>
-    <input id="fileInput" type="file" accept=".pdf,.epub,application/pdf,application/epub+zip" multiple hidden>
-    <input id="folderInput" type="file" accept=".pdf,.epub,application/pdf,application/epub+zip" webkitdirectory directory multiple hidden>
+    <input id="fileInput" type="file" accept=".pdf,.epub,.cbr,.cbz,application/pdf,application/epub+zip" multiple hidden>
+    <input id="folderInput" type="file" accept=".pdf,.epub,.cbr,.cbz,application/pdf,application/epub+zip" webkitdirectory directory multiple hidden>
   </header>
 
   <main>
@@ -98,7 +98,7 @@
       </section>
       <section class="library-controls">
         <div class="filter-pills" id="filterPills">
-          <button class="filter-pill active" data-filter="all" type="button">Todos</button><button class="filter-pill" data-filter="favorites" type="button">♥ Favoritos</button><button class="filter-pill" data-filter="pdf" type="button">PDF</button><button class="filter-pill" data-filter="epub" type="button">EPUB</button>
+          <button class="filter-pill active" data-filter="all" type="button">Todos</button><button class="filter-pill" data-filter="favorites" type="button">♥ Favoritos</button><button class="filter-pill" data-filter="pdf" type="button">PDF</button><button class="filter-pill" data-filter="epub" type="button">EPUB</button><button class="filter-pill" data-filter="cbz" type="button">CBZ</button><button class="filter-pill" data-filter="cbr" type="button">CBR</button>
         </div>
         <div class="sort-view"><label class="sort-label">Ordenar<select id="sortSelect"><option value="updated">Últimos usados</option><option value="title">Título A–Z</option><option value="author">Autor A–Z</option><option value="progress">Progreso</option></select></label><div class="view-toggle" aria-label="Vista"><button id="gridViewBtn" class="view-btn active" type="button" title="Vista de portadas">▦</button><button id="listViewBtn" class="view-btn" type="button" title="Vista de lista">☰</button></div></div>
       </section>
@@ -112,7 +112,7 @@
   </main>
 
   <div id="reader" class="reader hidden" aria-modal="true" role="dialog">
-    <div class="reader-head"><div><strong id="readerTitle">—</strong><span id="readerInfo">—</span></div><div class="reader-actions"><button id="prevPageBtn" class="secondary" type="button">← Anterior</button><button id="nextPageBtn" class="secondary" type="button">Siguiente →</button><span id="pdfReaderControls" class="pdf-reader-controls hidden"><button id="pdfSingleBtn" class="secondary" type="button">▯ 1 pág.</button><button id="pdfDoubleBtn" class="secondary" type="button">▯▯ 2 págs.</button><button id="pdfCoverFirstBtn" class="secondary" type="button" disabled>📕 Portada sola</button><button id="pdfZoomOutBtn" class="secondary" type="button">−</button><button id="pdfZoomInBtn" class="secondary" type="button">＋</button><button id="pdfFitBtn" class="secondary" type="button">Ajustar</button><button id="pdfFullscreenBtn" class="secondary" type="button">⛶</button></span><button id="saveProgressBtn" class="secondary" type="button">Guardar posición</button><button id="closeReaderBtn" class="icon-btn" title="Cerrar">✕</button></div></div>
+    <div class="reader-head"><div><strong id="readerTitle">—</strong><span id="readerInfo">—</span></div><div class="reader-actions"><button id="prevPageBtn" class="secondary" type="button">← Anterior</button><button id="nextPageBtn" class="secondary" type="button">Siguiente →</button><span id="pdfReaderControls" class="pdf-reader-controls hidden"><button id="pdfSingleBtn" class="secondary" type="button">▯ 1 pág.</button><button id="pdfDoubleBtn" class="secondary" type="button">▯▯ 2 págs.</button><button id="pdfCoverFirstBtn" class="secondary" type="button" disabled>📕 Portada sola</button><button id="pdfZoomOutBtn" class="secondary" type="button">−</button><button id="pdfZoomInBtn" class="secondary" type="button">＋</button><button id="pdfFitBtn" class="secondary" type="button">Ajustar</button><button id="pdfFullscreenBtn" class="secondary" type="button">⛶</button></span><span id="comicReaderControls" class="pdf-reader-controls hidden"><button id="comicSingleBtn" class="secondary" type="button">▯ 1 pág.</button><button id="comicDoubleBtn" class="secondary" type="button">▯▯ 2 págs.</button><button id="comicRtlBtn" class="secondary" type="button">↔ Manga</button><button id="comicFullscreenBtn" class="secondary" type="button">⛶</button></span><button id="saveProgressBtn" class="secondary" type="button">Guardar posición</button><button id="closeReaderBtn" class="icon-btn" title="Cerrar">✕</button></div></div>
     <div id="readerBody" class="reader-body"></div>
   </div>
 
@@ -166,7 +166,7 @@
       </div>
       <div class="sources-section">
         <div class="sources-head"><div><span class="eyebrow">BIBLIOTECA AUTOMÁTICA</span><h3>📁 Fuentes de libros</h3></div><div class="sources-head-actions"><button id="refreshSourcesBtn" class="secondary" type="button">🔄 Revisar</button><button id="addSourceBtn" class="primary" type="button">＋ Añadir carpeta</button></div></div>
-        <p class="sources-subtitle">Registra carpetas donde guardas tus PDF y EPUB. La Pulenta las revisará al abrir la biblioteca y buscará libros nuevos sin que tengas que importarlos uno por uno.</p>
+        <p class="sources-subtitle">Registra carpetas donde guardas tus PDF, EPUB y cómics CBR/CBZ. La Pulenta las revisará al abrir la biblioteca y buscará libros nuevos sin que tengas que importarlos uno por uno.</p>
         <div id="sourceList" class="source-list"></div>
       </div>
       <input id="backupInput" type="file" accept=".zip,application/zip" hidden>

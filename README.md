@@ -57,3 +57,14 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Se puede revisar una fuente manualmente o quitarla de la lista sin borrar ningún libro ni archivo.
 - Si el navegador requiere renovar el permiso, la revisión manual permite solicitarlo mediante interacción del usuario.
 - La fuente se guarda como `FileSystemDirectoryHandle` en IndexedDB; el acceso sigue dependiendo del permiso concedido por el usuario.
+
+
+## v1.4 — Pulenta Comic Reader
+- Añadido soporte para CBR y CBZ.
+- Las fuentes automáticas detectan CBR/CBZ.
+- Portada automática desde la primera imagen del cómic.
+- Lector de cómics con navegación, swipe, una/doble página, modo manga RTL y pantalla completa.
+- Progreso de cómic persistente.
+- Backup completo conserva la extensión CBR/CBZ.
+- PDF, EPUB, backup liviano y El Pulento Player quedan intactos.
+- CBR usa libarchive-wasm en el navegador; los archivos del usuario no se suben a un servidor.
