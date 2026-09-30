@@ -74,3 +74,11 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Added mouse-wheel zoom and pinch zoom to PDF and comic readers.
 - EPUB reader also accepts pinch/wheel zoom where the EPUB iframe exposes pointer/wheel events.
 - Existing PDF/EPUB/comic navigation and storage remain unchanged.
+
+## v1.4.2 — Zoom navegable
+- Zoom por rueda y pinch mantenido.
+- Arrastre con un dedo o mouse para mover la página cuando está ampliada.
+- El gesto de arrastre no cambia de página mientras hay zoom.
+- Aplicado a PDF, EPUB y CBZ/CBR cuando el lector logra abrirlos.
+- Al volver al zoom normal se restablece la posición.
+- CBR queda pendiente de una solución de carga WASM más robusta.

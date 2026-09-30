@@ -119,3 +119,8 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
 .epub-reader-stage.zoomed{cursor:grab}
 .comic-stage{overscroll-behavior:contain}
 .comic-spread{transform-origin:center center;will-change:transform}
+
+/* v1.4.2 — zoom navegable */
+.pdf-stage[data-zoom-dragging="1"], .comic-stage[data-zoom-dragging="1"]{cursor:grabbing}
+.pdf-stage, .comic-stage{cursor:default}
+.pdf-stage[data-zoom-dragging="1"] .pdf-spread, .comic-stage[data-zoom-dragging="1"] .comic-spread{cursor:grabbing}
