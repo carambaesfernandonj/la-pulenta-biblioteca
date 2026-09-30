@@ -7,7 +7,7 @@ let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated
 let collections=[];
 let playerState={book:null,bookEngine:null,chapters:[],chapterIndex:0,chunkIndex:0,chunks:[],speaking:false,paused:false,voices:[],rate:1,startedAt:0,chunkStartedAt:0};
 let playerUtterance=null;
-let comicState={pages:[],page:1,double:false,rtl:false,urls:[],renderToken:0,swipeX:0,swipeY:0};
+let comicState={pages:[],page:1,double:false,rtl:false,urls:[],renderToken:0,swipeX:0,swipeY:0,zoom:1};
 let comicArchiveModule=null;
 const PLAYER_CHUNK_MAX=180;
 
@@ -578,12 +578,13 @@ async function closeReader(){
   if(currentEpubBook){try{currentEpubBook.destroy()}catch(e){}}
   currentEpubRendition=null;
   currentEpubBook=null;
+  epubZoomState.scale=1;epubZoomState.holder=null;
   if(currentEpubUrl){URL.revokeObjectURL(currentEpubUrl);currentEpubUrl=null}
   if(currentObjectUrl){URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=null}
   if(pdfState?.cleanup){try{pdfState.cleanup()}catch(e){}}
   if(pdfState?.doc){try{await pdfState.doc.destroy()}catch(e){}}
   setPdfStateDefaults();
-  const controls=document.getElementById('pdfReaderControls');if(controls)controls.classList.add('hidden');const comicControls=document.getElementById('comicReaderControls');if(comicControls)comicControls.classList.add('hidden');for(const u of comicState?.urls||[]){try{URL.revokeObjectURL(u)}catch(e){}}comicState={pages:[],page:1,double:false,rtl:false,urls:[],renderToken:0,swipeX:0,swipeY:0};
+  const controls=document.getElementById('pdfReaderControls');if(controls)controls.classList.add('hidden');const comicControls=document.getElementById('comicReaderControls');if(comicControls)comicControls.classList.add('hidden');for(const u of comicState?.urls||[]){try{URL.revokeObjectURL(u)}catch(e){}}comicState={pages:[],page:1,double:false,rtl:false,urls:[],renderToken:0,swipeX:0,swipeY:0,zoom:1};
   document.getElementById('readerBody').innerHTML='';
   document.getElementById('reader').classList.add('hidden');
   currentBook=null;
@@ -630,6 +631,17 @@ function updateReaderInfo(){
   }
 }
 const pdfState={};
+const epubZoomState={scale:1,holder:null};
+function setReaderZoomVisual(el,scale){if(!el)return;el.style.setProperty('--reader-zoom',String(scale));el.style.transform=`scale(${scale})`;el.style.transformOrigin='center center'}
+function attachZoomGestures(stage,{getZoom,setZoom,onZoomEnd}){
+  if(!stage)return;
+  const pointers=new Map();let pinchStart=0;let pinchZoom=1;let pinchActive=false;let wheelTimer=0;
+  const distance=()=>{const a=[...pointers.values()];if(a.length<2)return 0;return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)};
+  stage.addEventListener('pointerdown',e=>{pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});try{stage.setPointerCapture(e.pointerId)}catch(_){} if(pointers.size===2){pinchActive=true;stage.dataset.zoomPinching='1';pinchStart=distance();pinchZoom=getZoom()||1;e.preventDefault()}},{passive:false});
+  stage.addEventListener('pointermove',e=>{if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===2){const d=distance();if(pinchStart&&d){const next=Math.max(.6,Math.min(4,pinchZoom*(d/pinchStart)));setZoom(next,true);e.preventDefault()}}},{passive:false});
+  const end=e=>{pointers.delete(e.pointerId);if(pinchActive&&pointers.size<2){pinchActive=false;stage.dataset.zoomPinching='0';pinchStart=0;onZoomEnd?.()} };
+  stage.addEventListener('pointerup',end);stage.addEventListener('pointercancel',end);stage.addEventListener('wheel',e=>{e.preventDefault();const next=Math.max(.6,Math.min(4,(getZoom()||1)+(e.deltaY<0?.15:-.15)));setZoom(next,true);clearTimeout(wheelTimer);wheelTimer=setTimeout(()=>onZoomEnd?.(),120)},{passive:false});
+}
 function setPdfStateDefaults(){pdfState.doc=null;pdfState.page=1;pdfState.double=false;pdfState.coverFirst=false;pdfState.zoom=1;pdfState.fit=true;pdfState.renderToken=0;pdfState.swipeX=0;pdfState.swipeY=0;pdfState.cache=new Map();pdfState.prefetching=new Set();pdfState.viewportKey=''}
 async function openPdfReader(b){
   if(!window.pdfjsLib)throw new Error('PDF.js no está disponible');
@@ -693,10 +705,11 @@ async function openPdfReader(b){
   document.getElementById('pdfFitBtn').onclick=async()=>{invalidateCache();pdfState.fit=true;pdfState.zoom=1;await render()};
   document.getElementById('pdfFullscreenBtn').onclick=async()=>{try{await document.getElementById('reader').requestFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
   stage.addEventListener('pointerdown',e=>{pdfState.swipeX=e.clientX;pdfState.swipeY=e.clientY});
-  stage.addEventListener('pointerup',async e=>{const dx=e.clientX-pdfState.swipeX,dy=e.clientY-pdfState.swipeY;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2){if(dx<0)await goNext();else await goPrev()}});
+  stage.addEventListener('pointerup',async e=>{if(stage.dataset.zoomPinching==='1')return;const dx=e.clientX-pdfState.swipeX,dy=e.clientY-pdfState.swipeY;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2){if(dx<0)await goNext();else await goPrev()}});
   document.getElementById('saveProgressBtn').onclick=async()=>{if(currentBook){currentBook.pdfPage=pdfState.page;currentBook.progress=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);currentBook.updatedAt=Date.now();await putBook(currentBook);toast('Posición guardada.');updateReaderInfo()}};
   const onResize=()=>{if(!document.getElementById('reader').classList.contains('hidden')){invalidateCache();render()}};window.addEventListener('resize',onResize,{passive:true});pdfState.cleanup=()=>window.removeEventListener('resize',onResize);
   stage.addEventListener('dblclick',async()=>{pdfState.fit=!pdfState.fit;await render()});
+  attachZoomGestures(stage,{getZoom:()=>pdfState.fit?1:pdfState.zoom,setZoom:(z,live)=>{pdfState.fit=false;pdfState.zoom=z;spread.style.transform=`scale(${z})`;spread.style.transformOrigin='center center'},onZoomEnd:async()=>{invalidateCache();spread.style.transform='';await render()}});
   stage.focus();await render();
 }
 
@@ -711,7 +724,7 @@ async function comicGetEntries(file){
     const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir&&comicImageName(n)).sort(comicNatural);
     return await Promise.all(names.map(async name=>({name,data:new Uint8Array(await zip.files[name].async('uint8array'))})));
   }
-  if(!comicArchiveModule){comicArchiveModule=await import('https://cdn.jsdelivr.net/npm/libarchive-wasm@1.2.0/dist/index.js');}
+  if(!comicArchiveModule){comicArchiveModule=await import('https://cdn.jsdelivr.net/npm/libarchive-wasm@1.2.0/+esm');}
   const {ArchiveReader,libarchiveWasm}=comicArchiveModule;
   const mod=await libarchiveWasm();
   const reader=new ArchiveReader(mod,new Int8Array(await file.arrayBuffer()));
@@ -735,14 +748,16 @@ async function openComicReader(b){
   document.getElementById('pdfReaderControls').classList.add('hidden');document.getElementById('comicReaderControls').classList.remove('hidden');
   const single=document.getElementById('comicSingleBtn'),dbl=document.getElementById('comicDoubleBtn'),rtl=document.getElementById('comicRtlBtn');
   single.classList.toggle('active',!comicState.double);dbl.classList.toggle('active',comicState.double);rtl.classList.toggle('active',comicState.rtl);
-  const render=async()=>{const token=++comicState.renderToken;spread.innerHTML='';const nums=comicState.double?(comicState.page===1?[1]:[comicState.page,Math.min(comicState.page+1,comicState.pages.length)]):[comicState.page];const shown=[...new Set(nums)].filter(n=>n>=1&&n<=comicState.pages.length);for(const n of shown){if(token!==comicState.renderToken)return;const wrap=document.createElement('div');wrap.className='comic-page-wrap'+(comicState.double?'':' single');const img=document.createElement('img');img.className='comic-page';img.src=comicState.urls[n-1];img.alt=`Página ${n}`;wrap.appendChild(img);spread.appendChild(wrap)}info.textContent=`${comicState.double?(comicState.page===1?'Portada':`Páginas ${comicState.page}–${Math.min(comicState.page+1,comicState.pages.length)}`):`Página ${comicState.page}`} · ${comicState.pages.length} · ${Math.round((comicState.page-1)/Math.max(1,comicState.pages.length-1)*100)}%`;const pct=(comicState.page-1)/Math.max(1,comicState.pages.length-1);b.comicPage=comicState.page;b.comicDouble=comicState.double;b.comicRtl=comicState.rtl;b.progress=Math.max(0,Math.min(1,pct));b.updatedAt=Date.now();currentBook=b;try{await putBook(b)}catch(e){}updateReaderInfo()};
+  const render=async()=>{const token=++comicState.renderToken;spread.innerHTML='';spread.style.transform=`scale(${comicState.zoom})`;spread.style.transformOrigin='center center';const nums=comicState.double?(comicState.page===1?[1]:[comicState.page,Math.min(comicState.page+1,comicState.pages.length)]):[comicState.page];const shown=[...new Set(nums)].filter(n=>n>=1&&n<=comicState.pages.length);for(const n of shown){if(token!==comicState.renderToken)return;const wrap=document.createElement('div');wrap.className='comic-page-wrap'+(comicState.double?'':' single');const img=document.createElement('img');img.className='comic-page';img.src=comicState.urls[n-1];img.alt=`Página ${n}`;wrap.appendChild(img);spread.appendChild(wrap)}info.textContent=`${comicState.double?(comicState.page===1?'Portada':`Páginas ${comicState.page}–${Math.min(comicState.page+1,comicState.pages.length)}`):`Página ${comicState.page}`} · ${comicState.pages.length} · ${Math.round((comicState.page-1)/Math.max(1,comicState.pages.length-1)*100)}%`;const pct=(comicState.page-1)/Math.max(1,comicState.pages.length-1);b.comicPage=comicState.page;b.comicDouble=comicState.double;b.comicRtl=comicState.rtl;b.progress=Math.max(0,Math.min(1,pct));b.updatedAt=Date.now();currentBook=b;try{await putBook(b)}catch(e){}updateReaderInfo()};
   const goPrev=async()=>{comicState.page=Math.max(1,comicState.page-(comicState.double?2:1));await render()};
   const goNext=async()=>{comicState.page=Math.min(comicState.pages.length,comicState.page+(comicState.double?2:1));await render()};
   document.getElementById('prevPageBtn').onclick=()=>comicState.rtl?goNext():goPrev();document.getElementById('nextPageBtn').onclick=()=>comicState.rtl?goPrev():goNext();
   single.onclick=async()=>{comicState.double=false;single.classList.add('active');dbl.classList.remove('active');await render()};dbl.onclick=async()=>{comicState.double=true;if(comicState.page>1&&comicState.page%2===0)comicState.page--;single.classList.remove('active');dbl.classList.add('active');await render()};rtl.onclick=async()=>{comicState.rtl=!comicState.rtl;rtl.classList.toggle('active',comicState.rtl);await render()};document.getElementById('comicFullscreenBtn').onclick=async()=>{try{await document.getElementById('reader').requestFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
-  stage.addEventListener('pointerdown',e=>{comicState.swipeX=e.clientX;comicState.swipeY=e.clientY});stage.addEventListener('pointerup',async e=>{const dx=e.clientX-comicState.swipeX,dy=e.clientY-comicState.swipeY;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2){if((dx<0&&!comicState.rtl)||(dx>0&&comicState.rtl))await goNext();else await goPrev()}});
+  stage.addEventListener('pointerdown',e=>{comicState.swipeX=e.clientX;comicState.swipeY=e.clientY});stage.addEventListener('pointerup',async e=>{if(stage.dataset.zoomPinching==='1')return;const dx=e.clientX-comicState.swipeX,dy=e.clientY-comicState.swipeY;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2){if((dx<0&&!comicState.rtl)||(dx>0&&comicState.rtl))await goNext();else await goPrev()}});
   document.getElementById('saveProgressBtn').onclick=async()=>{if(currentBook){currentBook.comicPage=comicState.page;currentBook.comicDouble=comicState.double;currentBook.comicRtl=comicState.rtl;currentBook.progress=(comicState.page-1)/Math.max(1,comicState.pages.length-1);currentBook.updatedAt=Date.now();await putBook(currentBook);toast('Posición guardada.');updateReaderInfo()}};
-  stage.addEventListener('dblclick',async()=>{try{await document.getElementById('reader').requestFullscreen()}catch(e){}});stage.focus();await render();
+  stage.addEventListener('dblclick',async()=>{comicState.zoom=comicState.zoom>1?1:2;spread.style.transform=`scale(${comicState.zoom})`;spread.style.transformOrigin='center center'});
+  attachZoomGestures(stage,{getZoom:()=>comicState.zoom,setZoom:(z)=>{comicState.zoom=z;spread.style.transform=`scale(${z})`;spread.style.transformOrigin='center center'},onZoomEnd:async()=>{}});
+  stage.focus();await render();
 }
 async function openBook(id,books){
   const b=(books||await getAllBooks()).find(x=>x.id===id);if(!b)return;
@@ -755,8 +770,18 @@ async function openBook(id,books){
     try{await openComicReader(b)}catch(e){console.error('Comic:',e);setLoading(false);document.getElementById('readerBody').innerHTML=`<div class="pdf-empty"><h3>No pude abrir este cómic</h3><p>El archivo está guardado en la biblioteca, pero no pude extraer sus páginas.</p><p class="book-meta">Detalle técnico: ${esc(e?.message||String(e))}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;}
   }else{
     if(typeof ePub!=='function'){document.getElementById('readerBody').innerHTML='<div class="epub-reader epub-error"><h3>No se pudo cargar el motor EPUB</h3><p>Revisa tu conexión a internet y vuelve a abrir la app.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';return}
-    const holder=document.createElement('div');holder.className='epub-reader';document.getElementById('readerBody').appendChild(holder);
-    try{await nextFrame();await createEpubRendition(b,holder)}catch(e){console.error('EPUB:',e);const detail=esc(e?.message||String(e)||'Error desconocido');document.getElementById('readerBody').innerHTML=`<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero el lector no pudo interpretar su contenido.</p><p class="book-meta">Detalle técnico: ${detail}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;}
+    const epubStage=document.createElement('div');epubStage.className='epub-reader-stage';
+    const holder=document.createElement('div');holder.className='epub-reader';epubStage.appendChild(holder);document.getElementById('readerBody').appendChild(epubStage);
+    try{
+      await nextFrame();
+      await createEpubRendition(b,holder);
+      const applyEpubZoom=z=>{epubZoomState.scale=z;holder.style.transform=`scale(${z})`;holder.style.transformOrigin='center center';epubStage.classList.toggle('zoomed',z>1.01)};
+      applyEpubZoom(1);
+      const contentBodies=()=>currentEpubRendition?.getContents?.().map(c=>c?.document?.body).filter(Boolean)||[];
+      const attachEpubGestures=()=>{for(const body of contentBodies()){if(body.dataset.pulentaZoom==='1')continue;body.dataset.pulentaZoom='1';attachZoomGestures(body,{getZoom:()=>epubZoomState.scale,setZoom:(z)=>applyEpubZoom(z),onZoomEnd:()=>{}})}};
+      attachEpubGestures();
+      currentEpubRendition.on('rendered',attachEpubGestures);
+    }catch(e){console.error('EPUB:',e);const detail=esc(e?.message||String(e)||'Error desconocido');document.getElementById('readerBody').innerHTML=`<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero el lector no pudo interpretar su contenido.</p><p class="book-meta">Detalle técnico: ${detail}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;}
   }
 }
 function wait(ms){return new Promise(r=>setTimeout(r,ms))}

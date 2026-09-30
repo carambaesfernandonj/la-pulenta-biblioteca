@@ -68,3 +68,9 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Backup completo conserva la extensión CBR/CBZ.
 - PDF, EPUB, backup liviano y El Pulento Player quedan intactos.
 - CBR usa libarchive-wasm en el navegador; los archivos del usuario no se suben a un servidor.
+
+## v1.4.1 — CBR + zoom táctil
+- Fixed CBR archive module loading in browser using jsDelivr ESM delivery.
+- Added mouse-wheel zoom and pinch zoom to PDF and comic readers.
+- EPUB reader also accepts pinch/wheel zoom where the EPUB iframe exposes pointer/wheel events.
+- Existing PDF/EPUB/comic navigation and storage remain unchanged.
