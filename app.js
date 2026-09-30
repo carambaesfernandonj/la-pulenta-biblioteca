@@ -1,6 +1,7 @@
 const DB_NAME = "biblioteca_lector";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = "books";
+const SOURCE_STORE = "sources";
 let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
 let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[], currentView="home";
 let collections=[];
@@ -14,7 +15,24 @@ if(window.pdfjsLib?.GlobalWorkerOptions) window.pdfjsLib.GlobalWorkerOptions.wor
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 function toast(m){const e=$("#toast");e.textContent=m;e.classList.add("show");clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove("show"),2400)}
-function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,DB_VERSION);r.onupgradeneeded=()=>{if(!r.result.objectStoreNames.contains(STORE))r.result.createObjectStore(STORE,{keyPath:"id"})};r.onsuccess=()=>{db=r.result;res(db)};r.onerror=()=>rej(r.error)})}
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB_NAME,DB_VERSION);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains(STORE))d.createObjectStore(STORE,{keyPath:"id"});if(!d.objectStoreNames.contains(SOURCE_STORE))d.createObjectStore(SOURCE_STORE,{keyPath:"id"})};r.onsuccess=()=>{db=r.result;res(db)};r.onerror=()=>rej(r.error)})}
+function sourceTx(m="readonly"){return db.transaction(SOURCE_STORE,m).objectStore(SOURCE_STORE)}
+function getAllSources(){return new Promise((res,rej)=>{const r=sourceTx().getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function putSource(s){return new Promise((res,rej)=>{const r=sourceTx("readwrite").put(s);r.onsuccess=res;r.onerror=()=>rej(r.error)})}
+function deleteSourceById(id){return new Promise((res,rej)=>{const r=sourceTx("readwrite").delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error)})}
+function sourceSupported(){return typeof window.showDirectoryPicker==='function'}
+async function sourcePermission(handle,request=false){try{if(!handle)return false;let state=await handle.queryPermission({mode:'read'});if(state==='granted')return true;if(request&&typeof handle.requestPermission==='function'){state=await handle.requestPermission({mode:'read'});return state==='granted'}return false}catch(e){console.warn('Pulenta source permission:',e);return false}}
+async function scanDirectoryHandle(handle,prefix='',map=new Map()){for await(const [name,entry] of handle.entries()){const rel=prefix?`${prefix}/${name}`:name;if(entry.kind==='file'&&/\.(pdf|epub)$/i.test(name)){try{map.set(normalizeRelativePath(rel),await entry.getFile())}catch(e){console.warn('No pude leer',rel,e)}}else if(entry.kind==='directory')await scanDirectoryHandle(entry,rel,map)}return map}
+async function scanSourceFiles(source,requestPermission=false){if(!source?.handle)return {status:'missing',map:new Map()};if(!(await sourcePermission(source.handle,requestPermission)))return {status:'permission',map:new Map()};try{return {status:'ok',map:await scanDirectoryHandle(source.handle)}}catch(e){console.warn('Pulenta source scan:',e);return {status:'error',map:new Map()}}}
+function sourceBookKey(sourceId,relativePath){return `${sourceId}::${normalizeRelativePath(relativePath)}`}
+async function addBooksFromSource(source,files){const existing=await getAllBooks();const bySource=new Map(existing.filter(b=>b.sourceId===source.id&&b.sourcePath).map(b=>[sourceBookKey(source.id,b.sourcePath),b]));const byRelative=new Map(existing.filter(b=>!b.sourceId&&b.relativePath).map(b=>[normalizeRelativePath(b.relativePath),b]));let added=0,updated=0;const entries=[...files.entries()];setLoading(true,'Revisando fuente…',`Buscando libros en ${source.name}`,0,Math.max(1,entries.length));for(let i=0;i<entries.length;i++){const [rel,f]=entries[i];const key=sourceBookKey(source.id,rel);const old=bySource.get(key)||byRelative.get(normalizeRelativePath(rel));if(old){if(!old.sourceId){old.sourceId=source.id;old.sourceName=source.name;old.sourcePath=normalizeRelativePath(rel)}if(f.lastModified&&old.fileLastModified&&f.lastModified!==old.fileLastModified){old.file=f;old.fileLastModified=f.lastModified;old.fileSize=f.size;old.updatedAt=Date.now();await putBook(old);updated++}}else{try{let coverData=null,meta={};const lower=f.name.toLowerCase();if(lower.endsWith('.pdf')){coverData=await generatePdfCover(f);meta=await extractPdfMetadata(f)}else{meta=await extractEpubMetadata(f);coverData=meta.coverData||null}const folders=rel.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))];await putBook({id:makeId(),title:meta.title||titleFromFilename(f.name),fileName:f.name,type:lower.endsWith('.epub')?'epub':'pdf',source:'local',sourceId:source.id,sourceName:source.name,sourcePath:normalizeRelativePath(rel),file:f,fileLastModified:f.lastModified||0,fileSize:f.size||0,relativePath:rel,progress:0,cfi:null,tags,collections:[],favorite:false,author:meta.author||'',language:meta.language||'',publisher:meta.publisher||'',description:meta.description||'',coverData,metadataScanned:true,lastOpenedAt:0,updatedAt:Date.now()});added++}catch(e){console.warn('Pulenta source add:',rel,e)}}setLoading(true,'Revisando fuente…',`Procesando: ${f.name}`,i+1,entries.length);await wait(0)}source.lastScanAt=Date.now();source.lastFoundCount=entries.length;await putSource(source);return {added,updated,total:entries.length}}
+async function refreshSource(source,requestPermission=false){const result=await scanSourceFiles(source,requestPermission);if(result.status!=='ok')return result;return {status:'ok',...(await addBooksFromSource(source,result.map))}}
+async function refreshAllSources(auto=true){const sources=await getAllSources();let added=0,updated=0,scanned=0,needsPermission=0;for(const source of sources){const result=await refreshSource(source,!auto);if(result.status==='permission')needsPermission++;else if(result.status==='ok'){added+=result.added||0;updated+=result.updated||0;scanned++}}return {sources,added,updated,scanned,needsPermission}}
+async function renderSources(){const box=$('#sourceList');if(!box)return;const sources=await getAllSources();if(!sources.length){box.innerHTML='<div class="source-empty">Todavía no tienes fuentes. Añade una carpeta donde guardes tus PDF y EPUB.</div>';return}box.innerHTML=sources.map(s=>`<div class="source-item" data-source-id="${esc(s.id)}"><div class="source-icon">📁</div><div class="source-copy"><strong>${esc(s.name)}</strong><small>${s.lastScanAt?`Última revisión: ${new Date(s.lastScanAt).toLocaleString('es-CL')}`:'Aún no revisada'}${s.lastFoundCount!=null?` · ${s.lastFoundCount} archivos`:''}</small></div><span class="source-status">●</span><button class="secondary source-scan" type="button">Revisar</button><button class="icon-btn source-delete" type="button" aria-label="Eliminar fuente">✕</button></div>`).join('');for(const row of box.querySelectorAll('.source-item')){const id=row.dataset.sourceId;const source=sources.find(x=>x.id===id);if(!source)continue;const ok=await sourcePermission(source.handle,false);row.querySelector('.source-status').textContent=ok?'●':'○';row.querySelector('.source-status').title=ok?'Permiso disponible':'Necesita permiso';row.querySelector('.source-scan').onclick=async()=>{const r=await refreshSource(source,true);renderLibrary(await getAllBooks());await renderSources();if(r.status==='permission')toast('La Pulenta necesita permiso para revisar esta carpeta.');else if(r.status==='ok')toast(r.added?`Encontré ${r.added} libro${r.added===1?'':'s'} nuevo${r.added===1?'':'s'}.`:'No encontré libros nuevos.');else toast('No pude revisar esta fuente.');setLoading(false)};row.querySelector('.source-delete').onclick=async()=>{if(confirm(`¿Quitar “${source.name}” de tus fuentes?
+
+No se borrarán libros ni archivos.`)){await deleteSourceById(id);await renderSources()}}}}
+async function addSource(){if(!sourceSupported()){toast('Este navegador no permite seleccionar carpetas con la API moderna.');return}try{const handle=await window.showDirectoryPicker({id:'pulenta-library-source',mode:'read'});const sources=await getAllSources();const same=await Promise.all(sources.map(async s=>{try{return await s.handle?.isSameEntry(handle)}catch(e){return false}}));if(same.some(Boolean)){toast('Esa carpeta ya está registrada como fuente.');return}const source={id:makeId(),name:handle.name,handle,createdAt:Date.now(),lastScanAt:0,lastFoundCount:0};await putSource(source);const r=await refreshSource(source,false);setLoading(false);await renderSources();renderLibrary(await getAllBooks());toast(r.status==='ok'?`Fuente añadida · ${r.added} libro${r.added===1?'':'s'} nuevo${r.added===1?'':'s'}.`:'Fuente añadida, pero no pude revisarla.')}catch(e){if(e?.name!=='AbortError'){console.error('Pulenta add source:',e);toast(`No pude añadir la fuente: ${e.message||'error'}`)}}}
+async function autoRefreshSources(){if(!sourceSupported())return;const r=await refreshAllSources(true);if(r.added||r.updated){renderLibrary(await getAllBooks());toast(`Fuentes revisadas · ${r.added} libro${r.added===1?'':'s'} nuevo${r.added===1?'':'s'}.`)}await renderSources()}
 function tx(m="readonly"){return db.transaction(STORE,m).objectStore(STORE)}
 function getAllBooks(){return new Promise((res,rej)=>{const r=tx().getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
 function putBook(b){return new Promise((res,rej)=>{const r=tx("readwrite").put(b);r.onsuccess=res;r.onerror=()=>rej(r.error)})}
@@ -139,14 +157,6 @@ async function readLocationManifest(file){
   if(manifest.format!=='la-pulenta-biblioteca-location-backup')throw new Error('El archivo no parece un respaldo liviano de La Pulenta.');
   if(!Array.isArray(manifest.books))throw new Error('El respaldo no contiene libros válidos.');
   return manifest;
-}
-async function scanDirectoryHandle(handle,prefix='',map=new Map()){
-  for await(const [name,entry] of handle.entries()){
-    const rel=prefix?`${prefix}/${name}`:name;
-    if(entry.kind==='file'&&/\.(pdf|epub)$/i.test(name)){try{map.set(normalizeRelativePath(rel),await entry.getFile())}catch(e){console.warn('No pude leer',rel,e)}}
-    else if(entry.kind==='directory')await scanDirectoryHandle(entry,rel,map);
-  }
-  return map;
 }
 function scanFolderInput(files){
   const map=new Map();
@@ -713,7 +723,9 @@ $("#gridViewBtn").onclick=()=>{viewMode='grid';$("#gridViewBtn").classList.add('
 $("#listViewBtn").onclick=()=>{viewMode='list';$("#listViewBtn").classList.add('active');$("#gridViewBtn").classList.remove('active');renderLibrary(lastBooks)};
 let lastBooks=[];const originalRender=renderLibrary;renderLibrary=function(all){lastBooks=all;originalRender(all)};
 $("#themeToggle").onclick=toggleTheme;
-$("#settingsBtn").onclick=openBackupModal;
+$("#addSourceBtn")?.addEventListener("click",addSource);
+$("#refreshSourcesBtn")?.addEventListener("click",async()=>{const r=await refreshAllSources(false);renderLibrary(await getAllBooks());await renderSources();setLoading(false);toast(r.added?`Fuentes revisadas · ${r.added} libro${r.added===1?'':'s'} nuevo${r.added===1?'':'s'}.`:'No encontré libros nuevos en las fuentes.')});
+$("#settingsBtn").onclick=async()=>{openBackupModal();await renderSources()};
 $("#backupClose").onclick=closeBackupModal;
 $("#backupModal").onclick=e=>{if(e.target===$("#backupModal"))closeBackupModal()};
 $("#exportBackupBtn").onclick=exportLibraryBackup;
@@ -785,7 +797,7 @@ $("#newCollectionPageBtn").onclick=()=>createCollectionPrompt();
 $("#newCollectionEmptyBtn").onclick=()=>createCollectionPrompt();
 $("#readBook").onclick=async()=>{if(!modalBook)return;const id=modalBook.id;closeBookDetails();await openBook(id,await getAllBooks())};$("#closeReaderBtn").onclick=closeReader;$("#saveProgressBtn").onclick=async()=>{if(!currentBook)return;if(currentEpubRendition){const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;let pct=Number(loc?.start?.percentage);if(!Number.isFinite(pct)){try{pct=Number(currentEpubBook.locations.percentageFromCfi(cfi))}catch(e){}}if(Number.isFinite(pct))currentBook.progress=Math.max(0,Math.min(1,pct));currentBook.updatedAt=Date.now();await putBook(currentBook)}}toast('Posición guardada.')};
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$("#bookModal").classList.contains('hidden'))closeBookDetails();else if(!$("#reader").classList.contains('hidden'))closeReader()});
-(async()=>{try{loadCollections();await openDB();renderLibrary(await getAllBooks())}catch(e){console.error(e);toast('No se pudo iniciar la biblioteca en este navegador.')}})();
+(async()=>{try{loadCollections();await openDB();renderLibrary(await getAllBooks());await autoRefreshSources();setInterval(()=>autoRefreshSources(),5*60*1000)}catch(e){console.error(e);toast('No se pudo iniciar la biblioteca en este navegador.')}})();
 
 
 // Controles EPUB explícitos: además de los gestos/teclas del lector, permiten avanzar

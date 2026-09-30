@@ -104,3 +104,8 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
 
 /* v1.2 — respaldo liviano por ubicaciones */
 .backup-actions-light{margin-top:10px}.backup-actions-light button{background:var(--bg)}
+
+/* v1.3 — fuentes automáticas */
+.sources-section{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.sources-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}.sources-head h3{margin:3px 0 0;font-size:18px}.sources-head-actions{display:flex;gap:7px;flex-wrap:wrap}.sources-subtitle{margin:9px 0 13px;color:var(--muted);font-size:12px;line-height:1.5}.source-list{display:grid;gap:8px}.source-item{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;gap:9px;align-items:center;padding:10px 11px;border:1px solid var(--line);border-radius:13px;background:var(--bg)}.source-icon{font-size:20px;text-align:center}.source-copy{min-width:0}.source-copy strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}.source-copy small{display:block;margin-top:3px;color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.source-status{font-size:12px;color:var(--accent)}.source-status[title="Necesita permiso"]{color:var(--muted)}.source-empty{padding:18px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:13px;font-size:12px;line-height:1.5}.source-delete{padding:7px 9px}
+@media(max-width:650px){.sources-head{flex-direction:column}.sources-head-actions{width:100%}.sources-head-actions button{flex:1}.source-item{grid-template-columns:28px minmax(0,1fr) auto}.source-item .source-delete{grid-column:3}.source-item .source-scan{grid-column:3;grid-row:1}.source-copy{grid-column:2}}

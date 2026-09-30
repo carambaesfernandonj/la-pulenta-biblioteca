@@ -1,4 +1,4 @@
-# La Pulenta Biblioteca v1.0 — Lector PDF
+# La Pulenta Biblioteca v1.3 — Fuentes automáticas
 
 Basada en la versión estable v0.9.3. Esta versión añade un lector PDF propio con PDF.js sin cambiar el motor EPUB.
 
@@ -43,3 +43,17 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Restauración liviana: selecciona el respaldo y luego la carpeta raíz donde están los libros. La Pulenta recorre subcarpetas y vincula primero por ruta relativa y, si la ruta cambió, por nombre de archivo cuando el nombre es único.
 - Los libros que no se encuentren no se eliminan: quedan registrados para poder volver a vincularlos posteriormente.
 - En navegadores sin `showDirectoryPicker`, se usa el selector de carpeta basado en `webkitdirectory` como alternativa.
+
+
+## v1.3 — Fuentes automáticas
+- Nueva sección **Fuentes de libros** dentro de Ajustes.
+- Permite registrar carpetas del equipo que contienen PDF y EPUB.
+- Al registrar una fuente, La Pulenta la revisa inmediatamente.
+- Al abrir la aplicación, revisa automáticamente las fuentes cuyo permiso siga disponible.
+- Mientras La Pulenta está abierta, vuelve a revisarlas cada 5 minutos sin volver a pedir permiso.
+- Los libros nuevos se agregan automáticamente con metadata, portada y tags derivados de las subcarpetas.
+- Los libros ya existentes se reconocen por fuente + ruta relativa para evitar duplicados.
+- Las importaciones anteriores por carpeta también pueden quedar vinculadas a una fuente por su ruta relativa.
+- Se puede revisar una fuente manualmente o quitarla de la lista sin borrar ningún libro ni archivo.
+- Si el navegador requiere renovar el permiso, la revisión manual permite solicitarlo mediante interacción del usuario.
+- La fuente se guarda como `FileSystemDirectoryHandle` en IndexedDB; el acceso sigue dependiendo del permiso concedido por el usuario.

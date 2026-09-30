@@ -164,6 +164,11 @@
         <button id="exportLocationBackupBtn" class="secondary" type="button">🗂️ Respaldo liviano</button>
         <button id="importLocationBackupBtn" class="secondary" type="button">📁 Restaurar desde carpeta</button>
       </div>
+      <div class="sources-section">
+        <div class="sources-head"><div><span class="eyebrow">BIBLIOTECA AUTOMÁTICA</span><h3>📁 Fuentes de libros</h3></div><div class="sources-head-actions"><button id="refreshSourcesBtn" class="secondary" type="button">🔄 Revisar</button><button id="addSourceBtn" class="primary" type="button">＋ Añadir carpeta</button></div></div>
+        <p class="sources-subtitle">Registra carpetas donde guardas tus PDF y EPUB. La Pulenta las revisará al abrir la biblioteca y buscará libros nuevos sin que tengas que importarlos uno por uno.</p>
+        <div id="sourceList" class="source-list"></div>
+      </div>
       <input id="backupInput" type="file" accept=".zip,application/zip" hidden>
       <input id="locationBackupInput" type="file" accept=".zip,application/zip" hidden>
       <input id="folderFallbackInput" type="file" webkitdirectory directory multiple hidden>
