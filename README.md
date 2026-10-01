@@ -82,3 +82,9 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Aplicado a PDF, EPUB y CBZ/CBR cuando el lector logra abrirlos.
 - Al volver al zoom normal se restablece la posición.
 - CBR queda pendiente de una solución de carga WASM más robusta.
+
+## v1.5.1 — Reparación de formatos
+- Corregida la detección de PDF/EPUB/CBZ/CBR al importar archivos y fuentes.
+- Corregidos libros existentes cuyo `type` había quedado registrado como CBR por el bug de v1.5.
+- La reparación usa la extensión real del nombre/ruta del archivo y no modifica el archivo original.
+- El backup completo vuelve a exportar cada formato con su extensión correcta.
