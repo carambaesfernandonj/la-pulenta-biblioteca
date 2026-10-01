@@ -88,3 +88,11 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Corregidos libros existentes cuyo `type` había quedado registrado como CBR por el bug de v1.5.
 - La reparación usa la extensión real del nombre/ruta del archivo y no modifica el archivo original.
 - El backup completo vuelve a exportar cada formato con su extensión correcta.
+
+## v1.5.2 — EPUB Tablet
+- lector EPUB ampliado para aprovechar más pantalla
+- modo 1 página / 2 páginas con persistencia por libro
+- navegación anterior/siguiente con botones
+- swipe horizontal y toque en los bordes del contenido
+- rueda del mouse y teclado para navegar
+- zoom/pan conservados
