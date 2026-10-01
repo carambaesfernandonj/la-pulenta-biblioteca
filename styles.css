@@ -124,3 +124,8 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
 .pdf-stage[data-zoom-dragging="1"], .comic-stage[data-zoom-dragging="1"]{cursor:grabbing}
 .pdf-stage, .comic-stage{cursor:default}
 .pdf-stage[data-zoom-dragging="1"] .pdf-spread, .comic-stage[data-zoom-dragging="1"] .comic-spread{cursor:grabbing}
+
+/* v1.5 — biblioteca sin duplicación */
+.storage-section{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.storage-info{margin-top:12px}.storage-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.storage-grid>div{border:1px solid var(--line);border-radius:13px;background:var(--bg);padding:13px}.storage-grid strong{display:block;font-size:20px;letter-spacing:-.03em}.storage-grid span{display:block;margin-top:5px;color:var(--muted);font-size:10px;line-height:1.35}.storage-note{margin:9px 0 0;color:var(--muted);font-size:11px;line-height:1.5}
+@media(max-width:650px){.storage-section .sources-head{flex-direction:column}.storage-section .sources-head>button{width:100%}.storage-grid{grid-template-columns:1fr}}

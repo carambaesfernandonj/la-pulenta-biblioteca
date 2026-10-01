@@ -24,10 +24,39 @@ function putSource(s){return new Promise((res,rej)=>{const r=sourceTx("readwrite
 function deleteSourceById(id){return new Promise((res,rej)=>{const r=sourceTx("readwrite").delete(id);r.onsuccess=res;r.onerror=()=>rej(r.error)})}
 function sourceSupported(){return typeof window.showDirectoryPicker==='function'}
 async function sourcePermission(handle,request=false){try{if(!handle)return false;let state=await handle.queryPermission({mode:'read'});if(state==='granted')return true;if(request&&typeof handle.requestPermission==='function'){state=await handle.requestPermission({mode:'read'});return state==='granted'}return false}catch(e){console.warn('Pulenta source permission:',e);return false}}
+async function getSourceFile(source,relativePath){
+  if(!source?.handle||!relativePath)throw new Error('La fuente no está disponible.');
+  if(!(await sourcePermission(source.handle,false)))throw new Error('La fuente necesita permiso.');
+  let handle=source.handle;
+  const parts=String(relativePath).replace(/\\/g,'/').split('/').filter(Boolean);
+  for(const part of parts){handle=await handle.getFileHandle(part);}
+  return await handle.getFile();
+}
+async function getBookFile(book,{requestPermission=false}={}){
+  if(!book)throw new Error('Libro no disponible.');
+  if(book.sourceId&&book.sourcePath){
+    const source=(await getAllSources()).find(s=>s.id===book.sourceId);
+    if(source){
+      try{
+        if(requestPermission&&!(await sourcePermission(source.handle,false)))await sourcePermission(source.handle,true);
+        return await getSourceFile(source,book.sourcePath);
+      }catch(e){
+        if(!(book.file instanceof Blob))throw e;
+      }
+    }
+  }
+  if(book.file instanceof Blob)return book.file;
+  throw new Error('No encontré el archivo. Vuelve a conectar la fuente o restaura el libro.');
+}
+async function linkBookToSource(book,source,relativePath,file){
+  book.source='local';book.sourceId=source.id;book.sourceName=source.name;book.sourcePath=normalizeRelativePath(relativePath);book.relativePath=normalizeRelativePath(relativePath);book.fileLastModified=file?.lastModified||book.fileLastModified||0;book.fileSize=file?.size||book.fileSize||0;book.missingFile=false;book.storageMode='linked';
+  delete book.file;
+  return book;
+}
 async function scanDirectoryHandle(handle,prefix='',map=new Map()){for await(const [name,entry] of handle.entries()){const rel=prefix?`${prefix}/${name}`:name;if(entry.kind==='file'&&/\.(pdf|epub|cbr|cbz)$/i.test(name)){try{map.set(normalizeRelativePath(rel),await entry.getFile())}catch(e){console.warn('No pude leer',rel,e)}}else if(entry.kind==='directory')await scanDirectoryHandle(entry,rel,map)}return map}
 async function scanSourceFiles(source,requestPermission=false){if(!source?.handle)return {status:'missing',map:new Map()};if(!(await sourcePermission(source.handle,requestPermission)))return {status:'permission',map:new Map()};try{return {status:'ok',map:await scanDirectoryHandle(source.handle)}}catch(e){console.warn('Pulenta source scan:',e);return {status:'error',map:new Map()}}}
 function sourceBookKey(sourceId,relativePath){return `${sourceId}::${normalizeRelativePath(relativePath)}`}
-async function addBooksFromSource(source,files){const existing=await getAllBooks();const bySource=new Map(existing.filter(b=>b.sourceId===source.id&&b.sourcePath).map(b=>[sourceBookKey(source.id,b.sourcePath),b]));const byRelative=new Map(existing.filter(b=>!b.sourceId&&b.relativePath).map(b=>[normalizeRelativePath(b.relativePath),b]));let added=0,updated=0;const entries=[...files.entries()];setLoading(true,'Revisando fuente…',`Buscando libros en ${source.name}`,0,Math.max(1,entries.length));for(let i=0;i<entries.length;i++){const [rel,f]=entries[i];const key=sourceBookKey(source.id,rel);const old=bySource.get(key)||byRelative.get(normalizeRelativePath(rel));if(old){if(!old.sourceId){old.sourceId=source.id;old.sourceName=source.name;old.sourcePath=normalizeRelativePath(rel)}if(f.lastModified&&old.fileLastModified&&f.lastModified!==old.fileLastModified){old.file=f;old.fileLastModified=f.lastModified;old.fileSize=f.size;old.updatedAt=Date.now();await putBook(old);updated++}}else{try{let coverData=null,meta={};const lower=f.name.toLowerCase();if(lower.endsWith('.pdf')){coverData=await generatePdfCover(f);meta=await extractPdfMetadata(f)}else if(lower.endsWith('.epub')){meta=await extractEpubMetadata(f);coverData=meta.coverData||null}else{coverData=await generateComicCover(f);meta={title:titleFromFilename(f.name)}}const folders=rel.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))];await putBook({id:makeId(),title:meta.title||titleFromFilename(f.name),fileName:f.name,type:lower.endsWith('.epub')?'epub':(lower.endsWith('.cbz')?'cbz':'cbr'),source:'local',sourceId:source.id,sourceName:source.name,sourcePath:normalizeRelativePath(rel),file:f,fileLastModified:f.lastModified||0,fileSize:f.size||0,relativePath:rel,progress:0,cfi:null,tags,collections:[],favorite:false,author:meta.author||'',language:meta.language||'',publisher:meta.publisher||'',description:meta.description||'',coverData,metadataScanned:true,lastOpenedAt:0,updatedAt:Date.now()});added++}catch(e){console.warn('Pulenta source add:',rel,e)}}setLoading(true,'Revisando fuente…',`Procesando: ${f.name}`,i+1,entries.length);await wait(0)}source.lastScanAt=Date.now();source.lastFoundCount=entries.length;await putSource(source);return {added,updated,total:entries.length}}
+async function addBooksFromSource(source,files){const existing=await getAllBooks();const bySource=new Map(existing.filter(b=>b.sourceId===source.id&&b.sourcePath).map(b=>[sourceBookKey(source.id,b.sourcePath),b]));const byRelative=new Map(existing.filter(b=>!b.sourceId&&b.relativePath).map(b=>[normalizeRelativePath(b.relativePath),b]));let added=0,updated=0;const entries=[...files.entries()];setLoading(true,'Revisando fuente…',`Buscando libros en ${source.name}`,0,Math.max(1,entries.length));for(let i=0;i<entries.length;i++){const [rel,f]=entries[i];const key=sourceBookKey(source.id,rel);const old=bySource.get(key)||byRelative.get(normalizeRelativePath(rel));if(old){let changed=false;if(!old.sourceId){old.sourceId=source.id;old.sourceName=source.name;old.sourcePath=normalizeRelativePath(rel);changed=true}if(f.lastModified&&old.fileLastModified!==f.lastModified){old.fileLastModified=f.lastModified;old.fileSize=f.size;old.updatedAt=Date.now();changed=true;updated++}if(old.file instanceof Blob&&old.sourceId===source.id){delete old.file;old.storageMode='linked';changed=true}if(changed)await putBook(old)}else{try{let coverData=null,meta={};const lower=f.name.toLowerCase();if(lower.endsWith('.pdf')){coverData=await generatePdfCover(f);meta=await extractPdfMetadata(f)}else if(lower.endsWith('.epub')){meta=await extractEpubMetadata(f);coverData=meta.coverData||null}else{coverData=await generateComicCover(f);meta={title:titleFromFilename(f.name)}}const folders=rel.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))];const book={id:makeId(),title:meta.title||titleFromFilename(f.name),fileName:f.name,type:lower.endsWith('.epub')?'epub':(lower.endsWith('.cbz')?'cbz':'cbr'),source:'local',sourceId:source.id,sourceName:source.name,sourcePath:normalizeRelativePath(rel),fileLastModified:f.lastModified||0,fileSize:f.size||0,relativePath:normalizeRelativePath(rel),progress:0,cfi:null,tags,collections:[],favorite:false,author:meta.author||'',language:meta.language||'',publisher:meta.publisher||'',description:meta.description||'',coverData,metadataScanned:true,lastOpenedAt:0,updatedAt:Date.now(),storageMode:'linked'};await putBook(book);added++}catch(e){console.warn('Pulenta source add:',rel,e)}}setLoading(true,'Revisando fuente…',`Procesando: ${f.name}`,i+1,entries.length);await wait(0)}source.lastScanAt=Date.now();source.lastFoundCount=entries.length;await putSource(source);return {added,updated,total:entries.length}}
 async function refreshSource(source,requestPermission=false){const result=await scanSourceFiles(source,requestPermission);if(result.status!=='ok')return result;return {status:'ok',...(await addBooksFromSource(source,result.map))}}
 async function refreshAllSources(auto=true){const sources=await getAllSources();let added=0,updated=0,scanned=0,needsPermission=0;for(const source of sources){const result=await refreshSource(source,!auto);if(result.status==='permission')needsPermission++;else if(result.status==='ok'){added+=result.added||0;updated+=result.updated||0;scanned++}}return {sources,added,updated,scanned,needsPermission}}
 async function renderSources(){const box=$('#sourceList');if(!box)return;const sources=await getAllSources();if(!sources.length){box.innerHTML='<div class="source-empty">Todavía no tienes fuentes. Añade una carpeta donde guardes tus PDF, EPUB o cómics.</div>';return}box.innerHTML=sources.map(s=>`<div class="source-item" data-source-id="${esc(s.id)}"><div class="source-icon">📁</div><div class="source-copy"><strong>${esc(s.name)}</strong><small>${s.lastScanAt?`Última revisión: ${new Date(s.lastScanAt).toLocaleString('es-CL')}`:'Aún no revisada'}${s.lastFoundCount!=null?` · ${s.lastFoundCount} archivos`:''}</small></div><span class="source-status">●</span><button class="secondary source-scan" type="button">Revisar</button><button class="icon-btn source-delete" type="button" aria-label="Eliminar fuente">✕</button></div>`).join('');for(const row of box.querySelectorAll('.source-item')){const id=row.dataset.sourceId;const source=sources.find(x=>x.id===id);if(!source)continue;const ok=await sourcePermission(source.handle,false);row.querySelector('.source-status').textContent=ok?'●':'○';row.querySelector('.source-status').title=ok?'Permiso disponible':'Necesita permiso';row.querySelector('.source-scan').onclick=async()=>{const r=await refreshSource(source,true);renderLibrary(await getAllBooks());await renderSources();if(r.status==='permission')toast('La Pulenta necesita permiso para revisar esta carpeta.');else if(r.status==='ok')toast(r.added?`Encontré ${r.added} libro${r.added===1?'':'s'} nuevo${r.added===1?'':'s'}.`:'No encontré libros nuevos.');else toast('No pude revisar esta fuente.');setLoading(false)};row.querySelector('.source-delete').onclick=async()=>{if(confirm(`¿Quitar “${source.name}” de tus fuentes?
@@ -64,7 +93,8 @@ async function exportLibraryBackup(){
       const b=books[i];
       const ext=({epub:'epub',cbz:'cbz',cbr:'cbr',pdf:'pdf'})[(b.type||'pdf').toLowerCase()]||'pdf';
       const path=`files/${b.id}.${ext}`;
-      const fileBlob=b.file instanceof Blob?b.file:null;
+      let fileBlob=null;
+      try{fileBlob=await getBookFile(b)}catch(e){fileBlob=null}
       if(fileBlob) zip.file(path,fileBlob);
       const copy={...b};
       delete copy.file;
@@ -178,21 +208,27 @@ async function importLocationBackup(file){
   try{
     setLoading(true,'Preparando restauración…','Leyendo respaldo liviano',0,1);
     const manifest=await readLocationManifest(file);pendingLocationManifest=manifest;setLoading(false);
-    if('showDirectoryPicker' in window){const handle=await window.showDirectoryPicker({mode:'read'});await restoreLocationManifest(manifest,await scanDirectoryHandle(handle));pendingLocationManifest=null}
+    if('showDirectoryPicker' in window){const handle=await window.showDirectoryPicker({mode:'read'});await restoreLocationManifest(manifest,await scanDirectoryHandle(handle),handle);pendingLocationManifest=null}
     else{$('#folderFallbackInput').click()}
   }catch(e){pendingLocationManifest=null;setLoading(false);if(e?.name==='AbortError')return;console.error('Location backup import:',e);toast(`No pude preparar la restauración: ${e.message||'archivo inválido'}`)}
 }
 let pendingLocationManifest=null;
-async function restoreLocationManifest(manifest,map){
+async function restoreLocationManifest(manifest,map,sourceHandle=null){
   try{
     const backupCollections=Array.isArray(manifest.collections)?manifest.collections.filter(Boolean):[];
     collections=[...new Set([...collections,...backupCollections])].sort((a,b)=>a.localeCompare(b,'es',{sensitivity:'base'}));saveCollections();
     const existingById=new Map((await getAllBooks()).map(b=>[b.id,b]));let restored=0,missing=0,byName=0;
+    let restoreSource=null;
+    if(sourceHandle){restoreSource={id:makeId(),name:sourceHandle.name,handle:sourceHandle,createdAt:Date.now(),lastScanAt:Date.now(),lastFoundCount:map.size};await putSource(restoreSource)}
     setLoading(true,'Restaurando biblioteca…','Buscando tus libros en la carpeta seleccionada',0,Math.max(1,manifest.books.length));
     for(let i=0;i<manifest.books.length;i++){
       const meta=manifest.books[i],existing=existingById.get(meta.id),copy={...meta};delete copy.backupFile;delete copy.locationOnly;
       const match=matchLocationFile(meta,map);
-      if(match){copy.file=match.file;copy.relativePath=match.path;copy.missingFile=false;restored++;if(match.mode==='nombre')byName++}
+      if(match){
+        copy.relativePath=match.path;copy.missingFile=false;restored++;if(match.mode==='nombre')byName++;
+        if(restoreSource){copy.source='local';copy.sourceId=restoreSource.id;copy.sourceName=restoreSource.name;copy.sourcePath=normalizeRelativePath(match.path);copy.fileLastModified=match.file.lastModified||0;copy.fileSize=match.file.size||0;copy.storageMode='linked';delete copy.file}
+        else{copy.file=match.file}
+      }
       else if(existing?.file instanceof Blob){copy.file=existing.file;copy.missingFile=false;restored++}
       else{delete copy.file;copy.missingFile=true;missing++}
       await putBook(copy);setLoading(true,'Restaurando biblioteca…',match?`Vinculando: ${copy.title||copy.fileName||'libro'}`:`No encontrado: ${copy.title||copy.fileName||'libro'}`,i+1,manifest.books.length);await wait(0);
@@ -204,6 +240,12 @@ async function restoreLocationManifest(manifest,map){
 }
 function openBackupModal(){$('#backupModal').classList.remove('hidden')}
 function closeBackupModal(){$('#backupModal').classList.add('hidden')}
+
+async function storageEstimate(){try{return await navigator.storage?.estimate?.()||{}}catch(e){return {}}}
+async function getStoredBookBytes(){const books=await getAllBooks();return books.reduce((n,b)=>n+(b.file instanceof Blob?(b.file.size||0):0),0)}
+function formatBytes(n){n=Number(n)||0;if(n<1024)return `${n} B`;const units=['KB','MB','GB','TB'];let i=-1;do{n/=1024;i++}while(n>=1024&&i<units.length-1);return `${n.toFixed(n>=100?0:n>=10?1:2)} ${units[i]}`}
+async function renderStorageInfo(){const box=$('#storageInfo');if(!box)return;const books=await getAllBooks(),stored=await getStoredBookBytes(),linked=books.filter(b=>b.sourceId&&b.sourcePath);const estimate=await storageEstimate();box.innerHTML=`<div class="storage-grid"><div><strong>${formatBytes(stored)}</strong><span>Copias de libros guardadas dentro de La Pulenta</span></div><div><strong>${linked.length}</strong><span>Libros vinculados a una fuente</span></div><div><strong>${estimate.usage!=null?formatBytes(estimate.usage):'—'}</strong><span>Uso estimado del almacenamiento del sitio</span></div></div><p class="storage-note">Los libros vinculados a una fuente se leen desde su carpeta original y no necesitan una segunda copia en IndexedDB.</p>`}
+async function optimizeLinkedStorage(){const books=await getAllBooks();const candidates=books.filter(b=>b.sourceId&&b.sourcePath&&b.file instanceof Blob);if(!candidates.length){toast('No hay copias de libros vinculados que liberar.');await renderStorageInfo();return}if(!confirm(`La Pulenta encontró ${candidates.length} libro${candidates.length===1?'':'s'} que ya están vinculados a una fuente y todavía conservan una copia local.\n\nSe eliminarán solo esas copias internas. Los archivos originales NO se borrarán.\n\n¿Liberar espacio?`))return;let freed=0,done=0;setLoading(true,'Optimizando almacenamiento…','Comprobando que las fuentes sigan disponibles',0,candidates.length);for(const b of candidates){try{const file=await getBookFile(b);if(file instanceof Blob){freed+=b.file?.size||0;delete b.file;b.storageMode='linked';b.updatedAt=Date.now();await putBook(b);done++}}catch(e){console.warn('No pude liberar',b.title,e)}setLoading(true,'Optimizando almacenamiento…',b.title||b.fileName,done,candidates.length);await wait(0)}renderLibrary(await getAllBooks());await renderStorageInfo();setLoading(true,'✓ Optimización completada',`${formatBytes(freed)} liberados · ${done} libros desvinculados de su copia local`,candidates.length,candidates.length,true);await wait(1200);setLoading(false);toast(`${formatBytes(freed)} liberados. Los originales siguen intactos.`)}
 
 function loadTheme(){const dark=localStorage.getItem("pulenta_theme")==="dark";document.body.classList.toggle("dark-library",dark);const b=$("#themeToggle");if(b)b.textContent=dark?"☀️ Modo claro":"🌙 Modo oscuro"}
 function toggleTheme(){const dark=!document.body.classList.contains("dark-library");document.body.classList.toggle("dark-library",dark);localStorage.setItem("pulenta_theme",dark?"dark":"light");const b=$("#themeToggle");if(b)b.textContent=dark?"☀️ Modo claro":"🌙 Modo oscuro"}
@@ -337,7 +379,7 @@ async function showView(view){
 }
 function renderLibrary(all){const shown=filtered(all);renderHomeDashboard(all);renderCollectionsPage(all);$("#stats").textContent=`${all.length} libro${all.length===1?'':'s'}`;$("#emptyState").classList.toggle('hidden',all.length!==0);$("#noResults").classList.toggle('hidden',!all.length||shown.length!==0);$("#libraryGrid").classList.toggle('list-view',viewMode==='list');renderCollectionBar(all);renderTagBar(all);renderCollectionSummary(all,shown);$("#libraryGrid").innerHTML=shown.map(b=>`<button class="book" data-id="${b.id}" type="button">${coverFor(b)}<div class="book-content"><div class="book-title">${esc(b.title)}</div><div class="book-author">${esc(b.author||'Sin autor')}</div><div class="book-meta">${(b.type||'pdf').toUpperCase()} · ${Math.round((b.progress||0)*100)}%</div><div class="progress"><span style="width:${Math.max(0,Math.min(100,(b.progress||0)*100))}%"></span></div><div class="book-meta tags">${(b.tags||[]).slice(0,4).map(t=>'#'+esc(t)).join(' ')}</div></div></button>`).join('');$("#libraryGrid").querySelectorAll('.book').forEach(x=>x.onclick=()=>openBookDetails(x.dataset.id))}
 function renderContinue(all){const candidates=all.filter(b=>(b.progress||0)>0).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));const b=candidates[0];$("#continueSection").classList.toggle('hidden',!b);if(!b)return;$("#continueTitle").textContent=b.title;$("#continueMeta").textContent=`${Math.round(b.progress*100)}% leído · ${(b.type||'pdf').toUpperCase()}${b.author?' · '+b.author:''}`;$("#continueCover").innerHTML=coverFor(b,true);$("#continueBtn").onclick=()=>openBook(b.id,all)}
-async function openBookDetails(id){const b=(await getAllBooks()).find(x=>x.id===id);if(!b)return; if((b.type==='epub' || b.type==='pdf') && b.file && !b.metadataScanned){const meta=b.type==='epub'?await extractEpubMetadata(b.file):await extractPdfMetadata(b.file);b.metadataScanned=true;if(meta.title&&!b.title) b.title=meta.title;if(meta.author&&!b.author)b.author=meta.author;b.language=meta.language||b.language||'';b.publisher=meta.publisher||b.publisher||'';b.description=meta.description||b.description||'';if(meta.coverData&&!b.coverData)b.coverData=meta.coverData;await putBook(b)} modalBook=b;modalTags=[...(b.tags||[])];$("#modalTitle").textContent=b.title;$("#editTitle").value=b.title;$("#editAuthor").value=b.author||'';updateFavoriteButton();const modalPct=Math.round((b.progress||0)*100);$("#modalProgressText").textContent=modalPct+"%";$("#modalProgressBar").style.width=modalPct+"%";$("#modalMeta").innerHTML=`<b>Formato:</b> ${(b.type||'pdf').toUpperCase()}<br><b>Archivo:</b> ${esc(b.fileName)}<br><b>Origen:</b> ${b.source==='drive'?'Google Drive':'Dispositivo'}${b.language?`<br><b>Idioma:</b> ${esc(b.language)}`:''}${b.publisher?`<br><b>Editorial / productor:</b> ${esc(b.publisher)}`:''}${b.description?`<br><b>Descripción:</b> ${esc(b.description)}`:''}`;if(!b.coverData&&b.type==='pdf'&&b.file){$("#modalCover").innerHTML='<div class="cover"><div class="type">PDF</div><div class="cover-title">Generando portada…</div></div>';const c=await generatePdfCover(b.file);if(c){b.coverData=c;await putBook(b)}}$("#modalCover").innerHTML=b.coverData?`<img src="${b.coverData}" alt="Portada">`:coverFor(b);renderModalTags();renderModalCollections();$("#bookModal").classList.remove('hidden')}
+async function openBookDetails(id){const b=(await getAllBooks()).find(x=>x.id===id);if(!b)return; if((b.type==='epub' || b.type==='pdf') && !b.metadataScanned){let sourceFile=null;try{sourceFile=await getBookFile(b)}catch(e){}if(sourceFile){const meta=b.type==='epub'?await extractEpubMetadata(sourceFile):await extractPdfMetadata(sourceFile);b.metadataScanned=true;if(meta.title&&!b.title) b.title=meta.title;if(meta.author&&!b.author)b.author=meta.author;b.language=meta.language||b.language||'';b.publisher=meta.publisher||b.publisher||'';b.description=meta.description||b.description||'';if(meta.coverData&&!b.coverData)b.coverData=meta.coverData;await putBook(b)}} modalBook=b;modalTags=[...(b.tags||[])];$("#modalTitle").textContent=b.title;$("#editTitle").value=b.title;$("#editAuthor").value=b.author||'';updateFavoriteButton();const modalPct=Math.round((b.progress||0)*100);$("#modalProgressText").textContent=modalPct+"%";$("#modalProgressBar").style.width=modalPct+"%";$("#modalMeta").innerHTML=`<b>Formato:</b> ${(b.type||'pdf').toUpperCase()}<br><b>Archivo:</b> ${esc(b.fileName)}<br><b>Origen:</b> ${b.source==='drive'?'Google Drive':'Dispositivo'}${b.language?`<br><b>Idioma:</b> ${esc(b.language)}`:''}${b.publisher?`<br><b>Editorial / productor:</b> ${esc(b.publisher)}`:''}${b.description?`<br><b>Descripción:</b> ${esc(b.description)}`:''}`;if(!b.coverData&&b.type==='pdf'){let sourceFile=null;try{sourceFile=await getBookFile(b)}catch(e){}if(sourceFile){$("#modalCover").innerHTML='<div class="cover"><div class="type">PDF</div><div class="cover-title">Generando portada…</div></div>';const c=await generatePdfCover(sourceFile);if(c){b.coverData=c;await putBook(b)}}}$("#modalCover").innerHTML=b.coverData?`<img src="${b.coverData}" alt="Portada">`:coverFor(b);renderModalTags();renderModalCollections();$("#bookModal").classList.remove('hidden')}
 function renderModalCollections(){
   const e=$("#modalCollections");
   if(!collections.length){e.innerHTML='<span class="book-meta">Todavía no tienes colecciones. Crea una con “＋ Crear”.</span>';return}
@@ -367,7 +409,8 @@ function playerSplitText(text){
   return out;
 }
 async function extractEpubChapters(b){
-  if(!b?.file)throw new Error('Este libro no tiene un archivo disponible.');
+  const file=await getBookFile(b);
+  if(!file)throw new Error('Este libro no tiene un archivo disponible.');
   if(typeof ePub!=='function')throw new Error('El motor EPUB no está disponible.');
 
   // EPUB.js no garantiza que Section.contents exista hasta que esa sección
@@ -375,7 +418,7 @@ async function extractEpubChapters(b){
   // este mecanismo, así que El Pulento Player hace una rendition invisible
   // para obtener exactamente el mismo texto que el usuario puede seleccionar.
   const engine=ePub();
-  const buffer=await b.file.arrayBuffer();
+  const buffer=await file.arrayBuffer();
   await engine.open(buffer,'binary');
   await engine.ready;
 
@@ -593,7 +636,8 @@ async function closeReader(){
 function nextFrame(){return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}
 async function createEpubRendition(b, holder){
   if(typeof JSZip==='undefined') throw new Error('JSZip no está disponible');
-  const buffer = await b.file.arrayBuffer();
+  const file = await getBookFile(b);
+  const buffer = await file.arrayBuffer();
   currentEpubBook = ePub();
   await currentEpubBook.open(buffer, 'binary');
   await currentEpubBook.ready;
@@ -683,7 +727,8 @@ async function openPdfReader(b){
   const spread=document.createElement('div');spread.className='pdf-spread';stage.appendChild(spread);
   const info=document.createElement('div');info.className='pdf-bottom-info';stage.appendChild(info);
   document.getElementById('readerBody').appendChild(stage);
-  pdfState.doc=await window.pdfjsLib.getDocument({data:await b.file.arrayBuffer()}).promise;
+  const file=await getBookFile(b);
+  pdfState.doc=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
   pdfState.page=Math.max(1,Math.min(Number(b.pdfPage)||1,pdfState.doc.numPages));
   pdfState.double=!!b.pdfDouble;
   pdfState.coverFirst=pdfState.double && !!b.pdfCoverFirst;
@@ -777,7 +822,8 @@ async function openComicReader(b){
   const info=document.createElement('div');info.className='pdf-bottom-info';stage.appendChild(info);
   document.getElementById('readerBody').appendChild(stage);
   setLoading(true,'Abriendo cómic…',`Preparando páginas de ${b.title||b.fileName}`,0,1);
-  const entries=await comicGetEntries(b.file);if(!entries.length)throw new Error('No encontré imágenes dentro de este cómic.');
+  const file=await getBookFile(b);
+  const entries=await comicGetEntries(file);if(!entries.length)throw new Error('No encontré imágenes dentro de este cómic.');
   comicState.pages=entries.map(e=>({name:e.name,blob:new Blob([e.data],{type:comicMime(e.name)})}));comicState.page=Math.min(comicState.page,comicState.pages.length);
   comicState.urls=comicState.pages.map(p=>URL.createObjectURL(p.blob));
   setLoading(false);
@@ -835,7 +881,7 @@ let lastBooks=[];const originalRender=renderLibrary;renderLibrary=function(all){
 $("#themeToggle").onclick=toggleTheme;
 $("#addSourceBtn")?.addEventListener("click",addSource);
 $("#refreshSourcesBtn")?.addEventListener("click",async()=>{const r=await refreshAllSources(false);renderLibrary(await getAllBooks());await renderSources();setLoading(false);toast(r.added?`Fuentes revisadas · ${r.added} libro${r.added===1?'':'s'} nuevo${r.added===1?'':'s'}.`:'No encontré libros nuevos en las fuentes.')});
-$("#settingsBtn").onclick=async()=>{openBackupModal();await renderSources()};
+$("#settingsBtn").onclick=async()=>{openBackupModal();await renderSources();await renderStorageInfo()};
 $("#backupClose").onclick=closeBackupModal;
 $("#backupModal").onclick=e=>{if(e.target===$("#backupModal"))closeBackupModal()};
 $("#exportBackupBtn").onclick=exportLibraryBackup;
