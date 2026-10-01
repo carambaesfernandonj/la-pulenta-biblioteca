@@ -750,8 +750,8 @@ async function openPdfReader(b){
   const renderOne=async(num,scale,dpr,token,allowCache=true)=>{
     const page=await pdfState.doc.getPage(num);if(token!==pdfState.renderToken)return null;
     const viewport=page.getViewport({scale});const key=cacheKey(num,scale);
-    const wrap=document.createElement('div');wrap.className='pdf-page-wrap'+(pdfState.double?'':' single');
-    const canvas=document.createElement('canvas');canvas.className='pdf-page';canvas.width=Math.ceil(viewport.width*dpr);canvas.height=Math.ceil(viewport.height*dpr);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;wrap.appendChild(canvas);
+    const wrap=document.createElement('div');wrap.className='pdf-page-wrap'+(pdfState.double?'':' single');wrap.style.maxWidth='none';wrap.style.maxHeight='none';wrap.style.flex='0 0 auto';
+    const canvas=document.createElement('canvas');canvas.className='pdf-page';canvas.width=Math.ceil(viewport.width*dpr);canvas.height=Math.ceil(viewport.height*dpr);canvas.style.width=`${viewport.width}px`;canvas.style.height=`${viewport.height}px`;canvas.style.maxWidth='none';canvas.style.maxHeight='none';canvas.style.flex='0 0 auto';wrap.appendChild(canvas);
     const cached=allowCache?pdfState.cache.get(key):null;
     if(cached?.bitmap){canvas.getContext('2d',{alpha:false}).drawImage(cached.bitmap,0,0,canvas.width,canvas.height);return wrap}
     const ctx=canvas.getContext('2d',{alpha:false});const renderViewport=page.getViewport({scale:scale*dpr});await page.render({canvasContext:ctx,viewport:renderViewport}).promise;
@@ -765,7 +765,7 @@ async function openPdfReader(b){
   };
   const render=async()=>{
     pdfState.panX=Number(pdfState.panX)||0;pdfState.panY=Number(pdfState.panY)||0;
-    const token=++pdfState.renderToken;spread.innerHTML='';
+    const token=++pdfState.renderToken;spread.innerHTML='';spread.style.transform='translate3d(0,0,0) scale(1)';
     const pages=pdfState.double?(pdfState.coverFirst && pdfState.page===1?[1]:[pdfState.page,Math.min(pdfState.page+1,pdfState.doc.numPages)]):[pdfState.page];
     const unique=[...new Set(pages)].filter(n=>n>=1&&n<=pdfState.doc.numPages);
     const dpr=Math.min(window.devicePixelRatio||1,2);
@@ -796,7 +796,50 @@ async function openPdfReader(b){
   document.getElementById('saveProgressBtn').onclick=async()=>{if(currentBook){currentBook.pdfPage=pdfState.page;currentBook.progress=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);currentBook.updatedAt=Date.now();await putBook(currentBook);toast('Posición guardada.');updateReaderInfo()}};
   const onResize=()=>{if(!document.getElementById('reader').classList.contains('hidden')){invalidateCache();render()}};window.addEventListener('resize',onResize,{passive:true});pdfState.cleanup=()=>window.removeEventListener('resize',onResize);
   stage.addEventListener('dblclick',async()=>{pdfState.fit=!pdfState.fit;pdfState.panX=0;pdfState.panY=0;if(pdfState.fit)pdfState.zoom=1;await render()});
-  attachZoomGestures(stage,{getZoom:()=>pdfState.fit?1:pdfState.zoom,getPan:()=>({x:pdfState.panX,y:pdfState.panY}),setPan:(x,y,live)=>{pdfState.panX=x;pdfState.panY=y;spread.style.transform=`translate3d(${x}px,${y}px,0) scale(1)`;spread.style.transformOrigin='center center'},setZoom:(z,live)=>{pdfState.fit=false;pdfState.zoom=z;if(z<=1.01){pdfState.panX=0;pdfState.panY=0}const base=Math.max(.01,pdfState.renderedZoom||1);const visual=Math.max(.6,Math.min(4,z/base));spread.style.transform=`translate3d(${pdfState.panX}px,${pdfState.panY}px,0) scale(${visual})`;spread.style.transformOrigin='center center'},onZoomEnd:async()=>{invalidateCache();await render()}});
+  const clampPdfPan=(x,y,visual=1)=>{
+    const w=Math.max(1,spread.offsetWidth||stage.clientWidth);
+    const h=Math.max(1,spread.offsetHeight||stage.clientHeight);
+    const maxX=Math.max(0,(w*visual-stage.clientWidth)/2);
+    const maxY=Math.max(0,(h*visual-stage.clientHeight)/2);
+    return{
+      x:Math.max(-maxX,Math.min(maxX,Number(x)||0)),
+      y:Math.max(-maxY,Math.min(maxY,Number(y)||0))
+    };
+  };
+  const applyPdfZoomVisual=()=>{
+    const base=Math.max(.01,pdfState.renderedZoom||1);
+    const visual=Math.max(.6,Math.min(4,pdfState.zoom/base));
+    const pan=clampPdfPan(pdfState.panX,pdfState.panY,visual);
+    pdfState.panX=pan.x;
+    pdfState.panY=pan.y;
+    spread.style.transform=`translate3d(${pan.x}px,${pan.y}px,0) scale(${visual})`;
+    spread.style.transformOrigin='center center';
+  };
+  attachZoomGestures(stage,{
+    getZoom:()=>pdfState.fit?1:pdfState.zoom,
+    getPan:()=>({x:pdfState.panX,y:pdfState.panY}),
+    setPan:(x,y)=>{
+      const base=Math.max(.01,pdfState.renderedZoom||1);
+      const visual=Math.max(.6,Math.min(4,pdfState.zoom/base));
+      const pan=clampPdfPan(x,y,visual);
+      pdfState.panX=pan.x;
+      pdfState.panY=pan.y;
+      applyPdfZoomVisual();
+    },
+    setZoom:(z)=>{
+      pdfState.fit=false;
+      pdfState.zoom=Math.max(1,Math.min(4,z));
+      if(pdfState.zoom<=1.01){
+        pdfState.panX=0;
+        pdfState.panY=0;
+      }
+      applyPdfZoomVisual();
+    },
+    onZoomEnd:async()=>{
+      invalidateCache();
+      await render();
+    }
+  });
   stage.focus();await render();
 }
 

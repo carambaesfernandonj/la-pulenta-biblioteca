@@ -149,3 +149,22 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
 .epub-reader-stage.zoomed[data-zoom-dragging="1"] .epub-reader-gesture-layer{cursor:grabbing}
 .epub-reader-stage .epub-reader{will-change:transform}
 @media(max-width:700px){.reader-actions{max-width:100%;justify-content:flex-end}.reader-font-label{min-width:38px}.reader.reader-ui-hidden::after{font-size:10px}}
+
+/* v1.5.3 — PDF tablet zoom: preserve aspect ratio and allow panning */
+.pdf-stage .pdf-spread{
+  max-width:none;
+  max-height:none;
+  will-change:transform;
+  transform-origin:center center;
+}
+.pdf-stage .pdf-page-wrap{
+  max-width:none;
+  max-height:none;
+  flex:0 0 auto;
+}
+.pdf-stage .pdf-page-wrap.single{max-width:none}
+.pdf-stage .pdf-page{
+  max-width:none;
+  max-height:none;
+  flex:0 0 auto;
+}

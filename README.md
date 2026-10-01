@@ -106,3 +106,10 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Una/dos páginas persistentes.
 - Pantalla completa común para todos los lectores.
 - Opción para ocultar/mostrar los controles durante la lectura.
+
+## v1.5.3 — PDF Tablet
+- PDF zoom preserves the original page aspect ratio.
+- Pinch/wheel zoom uses proportional scaling.
+- Zoomed pages can be panned horizontally and vertically.
+- Panning is bounded so the page cannot be lost completely.
+- Existing EPUB tablet changes are preserved.
