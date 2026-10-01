@@ -96,3 +96,13 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - swipe horizontal y toque en los bordes del contenido
 - rueda del mouse y teclado para navegar
 - zoom/pan conservados
+
+## v1.5.2.1 — EPUB tablet refinado
+- Gestos táctiles del EPUB mediante una capa de interacción independiente del iframe.
+- Swipe horizontal y toque en los bordes para anterior/siguiente.
+- Pinch para zoom y arrastre de la página ampliada.
+- Zoom con rueda y doble clic/toque.
+- Tamaño de letra EPUB 80–180%, persistente por libro.
+- Una/dos páginas persistentes.
+- Pantalla completa común para todos los lectores.
+- Opción para ocultar/mostrar los controles durante la lectura.

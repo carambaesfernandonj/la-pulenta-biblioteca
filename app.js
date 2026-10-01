@@ -4,6 +4,8 @@ const STORE = "books";
 const SOURCE_STORE = "sources";
 let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
 let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[], currentView="home";
+let readerUiHidden=false;
+let stageResizeCleanup=null;
 let collections=[];
 let playerState={book:null,bookEngine:null,chapters:[],chapterIndex:0,chunkIndex:0,chunks:[],speaking:false,paused:false,voices:[],rate:1,startedAt:0,chunkStartedAt:0};
 let playerUtterance=null;
@@ -619,11 +621,13 @@ async function showPlayer(){
 }
 async function closeReader(){
   if(currentBook){try{await putBook(currentBook)}catch(e){}}
+  if(stageResizeCleanup){try{stageResizeCleanup()}catch(e){}stageResizeCleanup=null}
   if(currentEpubRendition){try{currentEpubRendition.destroy()}catch(e){}}
   if(currentEpubBook){try{currentEpubBook.destroy()}catch(e){}}
   currentEpubRendition=null;
   currentEpubBook=null;
   epubZoomState.scale=1;epubZoomState.panX=0;epubZoomState.panY=0;epubZoomState.holder=null;
+  const readerEl=document.getElementById("reader");readerEl.classList.remove("reader-ui-hidden");readerUiHidden=false;
   if(currentEpubUrl){URL.revokeObjectURL(currentEpubUrl);currentEpubUrl=null}
   if(currentObjectUrl){URL.revokeObjectURL(currentObjectUrl);currentObjectUrl=null}
   if(pdfState?.cleanup){try{pdfState.cleanup()}catch(e){}}
@@ -786,7 +790,7 @@ async function openPdfReader(b){
   document.getElementById('pdfZoomOutBtn').onclick=async()=>{invalidateCache();pdfState.fit=false;pdfState.panX=0;pdfState.panY=0;pdfState.zoom=Math.max(.65,pdfState.zoom-.2);await render()};
   document.getElementById('pdfZoomInBtn').onclick=async()=>{invalidateCache();pdfState.fit=false;pdfState.panX=0;pdfState.panY=0;pdfState.zoom=Math.min(3,pdfState.zoom+.2);await render()};
   document.getElementById('pdfFitBtn').onclick=async()=>{invalidateCache();pdfState.fit=true;pdfState.zoom=1;pdfState.panX=0;pdfState.panY=0;await render()};
-  document.getElementById('pdfFullscreenBtn').onclick=async()=>{try{await document.getElementById('reader').requestFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
+  
   stage.addEventListener('pointerdown',e=>{pdfState.swipeX=e.clientX;pdfState.swipeY=e.clientY});
   stage.addEventListener('pointerup',async e=>{if(stage.dataset.zoomPinching==='1'||stage.dataset.zoomDragging==='1'||pdfState.zoom>1.01)return;const dx=e.clientX-pdfState.swipeX,dy=e.clientY-pdfState.swipeY;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2){if(dx<0)await goNext();else await goPrev()}});
   document.getElementById('saveProgressBtn').onclick=async()=>{if(currentBook){currentBook.pdfPage=pdfState.page;currentBook.progress=(pdfState.page-1)/Math.max(1,pdfState.doc.numPages-1);currentBook.updatedAt=Date.now();await putBook(currentBook);toast('Posición guardada.');updateReaderInfo()}};
@@ -836,7 +840,7 @@ async function openComicReader(b){
   const goPrev=async()=>{comicState.page=Math.max(1,comicState.page-(comicState.double?2:1));comicState.panX=0;comicState.panY=0;await render()};
   const goNext=async()=>{comicState.page=Math.min(comicState.pages.length,comicState.page+(comicState.double?2:1));comicState.panX=0;comicState.panY=0;await render()};
   document.getElementById('prevPageBtn').onclick=()=>comicState.rtl?goNext():goPrev();document.getElementById('nextPageBtn').onclick=()=>comicState.rtl?goPrev():goNext();
-  single.onclick=async()=>{comicState.double=false;single.classList.add('active');dbl.classList.remove('active');await render()};dbl.onclick=async()=>{comicState.double=true;if(comicState.page>1&&comicState.page%2===0)comicState.page--;single.classList.remove('active');dbl.classList.add('active');await render()};rtl.onclick=async()=>{comicState.rtl=!comicState.rtl;rtl.classList.toggle('active',comicState.rtl);await render()};document.getElementById('comicFullscreenBtn').onclick=async()=>{try{await document.getElementById('reader').requestFullscreen()}catch(e){toast('Pantalla completa no disponible en este navegador.')}};
+  single.onclick=async()=>{comicState.double=false;single.classList.add('active');dbl.classList.remove('active');await render()};dbl.onclick=async()=>{comicState.double=true;if(comicState.page>1&&comicState.page%2===0)comicState.page--;single.classList.remove('active');dbl.classList.add('active');await render()};rtl.onclick=async()=>{comicState.rtl=!comicState.rtl;rtl.classList.toggle('active',comicState.rtl);await render()};
   stage.addEventListener('pointerdown',e=>{comicState.swipeX=e.clientX;comicState.swipeY=e.clientY});stage.addEventListener('pointerup',async e=>{if(stage.dataset.zoomPinching==='1'||stage.dataset.zoomDragging==='1'||comicState.zoom>1.01)return;const dx=e.clientX-comicState.swipeX,dy=e.clientY-comicState.swipeY;if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.2){if((dx<0&&!comicState.rtl)||(dx>0&&comicState.rtl))await goNext();else await goPrev()}});
   document.getElementById('saveProgressBtn').onclick=async()=>{if(currentBook){currentBook.comicPage=comicState.page;currentBook.comicDouble=comicState.double;currentBook.comicRtl=comicState.rtl;currentBook.progress=(comicState.page-1)/Math.max(1,comicState.pages.length-1);currentBook.updatedAt=Date.now();await putBook(currentBook);toast('Posición guardada.');updateReaderInfo()}};
   stage.addEventListener('dblclick',async()=>{comicState.zoom=comicState.zoom>1?1:2;if(comicState.zoom<=1){comicState.panX=0;comicState.panY=0}spread.style.transform=`translate3d(${comicState.panX}px,${comicState.panY}px,0) scale(${comicState.zoom})`;spread.style.transformOrigin='center center'});
@@ -855,61 +859,84 @@ async function openBook(id,books){
   }else{
     if(typeof ePub!=='function'){document.getElementById('readerBody').innerHTML='<div class="epub-reader epub-error"><h3>No se pudo cargar el motor EPUB</h3><p>Revisa tu conexión a internet y vuelve a abrir la app.</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>';return}
     const epubStage=document.createElement('div');epubStage.className='epub-reader-stage';epubStage.tabIndex=0;
-    const holder=document.createElement('div');holder.className='epub-reader';epubStage.appendChild(holder);document.getElementById('readerBody').appendChild(epubStage);
+    const holder=document.createElement('div');holder.className='epub-reader';epubStage.appendChild(holder);
+    const gestureLayer=document.createElement('div');gestureLayer.className='epub-reader-gesture-layer';gestureLayer.setAttribute('aria-label','Controles táctiles del lector EPUB');gestureLayer.setAttribute('role','application');epubStage.appendChild(gestureLayer);
+    document.getElementById('readerBody').appendChild(epubStage);
     try{
       await nextFrame();
       await createEpubRendition(b,holder);
       const singleBtn=document.getElementById('epubSingleBtn'),doubleBtn=document.getElementById('epubDoubleBtn');
+      const fontOut=document.getElementById('epubFontOutBtn'),fontReset=document.getElementById('epubFontResetBtn'),fontIn=document.getElementById('epubFontInBtn'),fontLabel=document.getElementById('epubFontSizeLabel');
       document.getElementById('epubReaderControls').classList.remove('hidden');
       let epubDouble=!!b.epubDouble;
-      const applyEpubZoom=z=>{epubZoomState.scale=z;if(z<=1.01){epubZoomState.panX=0;epubZoomState.panY=0}holder.style.transform=`translate3d(${epubZoomState.panX}px,${epubZoomState.panY}px,0) scale(${z})`;holder.style.transformOrigin='center center';epubStage.classList.toggle('zoomed',z>1.01)};
-      const updateEpubModeButtons=()=>{singleBtn.classList.toggle('active',!epubDouble);doubleBtn.classList.toggle('active',epubDouble)};
+      let epubFontSize=Math.max(80,Math.min(180,Number(b.epubFontSize)||100));
+      const clampPan=(x,y)=>{
+        const scale=Math.max(1,Number(epubZoomState.scale)||1);
+        if(scale<=1.01)return {x:0,y:0};
+        const r=epubStage.getBoundingClientRect();
+        const maxX=Math.max(80,(r.width*(scale-1))/2+Math.min(180,r.width*.18));
+        const maxY=Math.max(80,(r.height*(scale-1))/2+Math.min(180,r.height*.18));
+        return {x:Math.max(-maxX,Math.min(maxX,Number(x)||0)),y:Math.max(-maxY,Math.min(maxY,Number(y)||0))};
+      };
+      const applyEpubZoom=z=>{
+        epubZoomState.scale=Math.max(1,Math.min(4,Number(z)||1));
+        if(epubZoomState.scale<=1.01){epubZoomState.scale=1;epubZoomState.panX=0;epubZoomState.panY=0}
+        const pan=clampPan(epubZoomState.panX,epubZoomState.panY);epubZoomState.panX=pan.x;epubZoomState.panY=pan.y;
+        holder.style.transform=`translate3d(${epubZoomState.panX}px,${epubZoomState.panY}px,0) scale(${epubZoomState.scale})`;
+        holder.style.transformOrigin='center center';
+        epubStage.classList.toggle('zoomed',epubZoomState.scale>1.01);
+        epubStage.dataset.zoomDragging='0';
+      };
+      const applyEpubFontSize=async(size,save=true)=>{
+        epubFontSize=Math.max(80,Math.min(180,Math.round(Number(size)||100)/5*5));
+        try{currentEpubRendition.themes.fontSize(`${epubFontSize}%`)}catch(e){console.warn('EPUB font size:',e)}
+        if(fontLabel)fontLabel.textContent=`${epubFontSize}%`;
+        if(save){b.epubFontSize=epubFontSize;b.updatedAt=Date.now();try{await putBook(b)}catch(e){}}
+      };
+      const updateEpubModeButtons=()=>{singleBtn.classList.toggle('active',!epubDouble);doubleBtn.classList.toggle('active',epubDouble);if(fontLabel)fontLabel.textContent=`${epubFontSize}%`};
       const applyEpubSpread=async()=>{
         if(!currentEpubRendition)return;
-        epubDouble=!!epubDouble;
-        try{currentEpubRendition.spread(epubDouble?'auto':'none',epubDouble?0:0)}catch(e){console.warn('EPUB spread:',e)}
-        b.epubDouble=epubDouble;b.updatedAt=Date.now();try{await putBook(b)}catch(e){}
+        try{currentEpubRendition.spread(epubDouble?'auto':'none',0)}catch(e){console.warn('EPUB spread:',e)}
+        b.epubDouble=epubDouble;b.epubFontSize=epubFontSize;b.updatedAt=Date.now();try{await putBook(b)}catch(e){}
         try{const rect=epubStage.getBoundingClientRect();currentEpubRendition.resize(Math.max(320,Math.floor(rect.width)),Math.max(320,Math.floor(rect.height)));}catch(e){}
-        updateEpubModeButtons();
-        applyEpubZoom(epubZoomState.scale);
-        attachEpubInteractions();
+        updateEpubModeButtons();applyEpubZoom(epubZoomState.scale);await applyEpubFontSize(epubFontSize,false);
       };
-      const goEpubPrev=async()=>{if(!currentEpubRendition)return;try{await currentEpubRendition.prev()}catch(e){console.warn('EPUB prev:',e)}};
-      const goEpubNext=async()=>{if(!currentEpubRendition)return;try{await currentEpubRendition.next()}catch(e){console.warn('EPUB next:',e)}};
-      const contentBodies=()=>currentEpubRendition?.getContents?.().map(c=>c?.document?.body).filter(Boolean)||[];
+      const goEpubPrev=async()=>{if(!currentEpubRendition)return;applyEpubZoom(1);try{await currentEpubRendition.prev()}catch(e){console.warn('EPUB prev:',e)}};
+      const goEpubNext=async()=>{if(!currentEpubRendition)return;applyEpubZoom(1);try{await currentEpubRendition.next()}catch(e){console.warn('EPUB next:',e)}};
       let swipeStart=null;
-      const detachFns=[];
-      const attachEpubInteractions=()=>{
-        for(const body of contentBodies()){
-          if(body.dataset.pulentaEpubInteractions==='1')continue;
-          body.dataset.pulentaEpubInteractions='1';
-          const onDown=e=>{if(epubZoomState.scale>1.01)return;swipeStart={x:e.clientX,y:e.clientY,t:Date.now(),body};};
-          const onUp=async e=>{
-            if(!swipeStart||swipeStart.body!==body||epubZoomState.scale>1.01){swipeStart=null;return}
-            const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y,dt=Date.now()-swipeStart.t;swipeStart=null;
-            if(Math.abs(dx)>55&&Math.abs(dx)>Math.abs(dy)*1.15&&dt<900){if(dx<0)await goEpubNext();else await goEpubPrev();return}
-            const rect=body.getBoundingClientRect();
-            if(Math.abs(dx)<18&&Math.abs(dy)<18){if(e.clientX<rect.left+rect.width*.28)await goEpubPrev();else if(e.clientX>rect.right-rect.width*.28)await goEpubNext();}
-          };
-          body.addEventListener('pointerdown',onDown,{passive:true});body.addEventListener('pointerup',onUp,{passive:true});
-          const wheel=e=>{if(epubZoomState.scale>1.01)return;e.preventDefault();if(Math.abs(e.deltaY)>Math.abs(e.deltaX)){if(e.deltaY>0)goEpubNext();else goEpubPrev()}};
-          body.addEventListener('wheel',wheel,{passive:false});
-          const key=e=>{if(e.key==='ArrowLeft')goEpubPrev();if(e.key==='ArrowRight')goEpubNext()};body.addEventListener('keydown',key);
-          attachZoomGestures(body,{getZoom:()=>epubZoomState.scale,getPan:()=>({x:epubZoomState.panX,y:epubZoomState.panY}),setPan:(x,y)=>{epubZoomState.panX=x;epubZoomState.panY=y;applyEpubZoom(epubZoomState.scale)},setZoom:(z)=>applyEpubZoom(z),onZoomEnd:()=>{}});
-          detachFns.push(()=>{try{body.removeEventListener('pointerdown',onDown);body.removeEventListener('pointerup',onUp);body.removeEventListener('wheel',wheel);body.removeEventListener('keydown',key)}catch(e){}});
-        }
+      const onGestureDown=e=>{
+        if(e.pointerType==='mouse' && e.button!==0)return;
+        gestureLayer.setPointerCapture?.(e.pointerId);
+        swipeStart={x:e.clientX,y:e.clientY,t:Date.now(),pointerId:e.pointerId,pinch:false};
       };
+      const onGestureUp=async e=>{
+        if(!swipeStart)return;
+        const dx=e.clientX-swipeStart.x,dy=e.clientY-swipeStart.y,dt=Date.now()-swipeStart.t;swipeStart=null;
+        if(epubZoomState.scale>1.01)return;
+        if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.15&&dt<1000){if(dx<0)await goEpubNext();else await goEpubPrev();return}
+        if(Math.abs(dx)<18&&Math.abs(dy)<18){const r=gestureLayer.getBoundingClientRect();if(e.clientX<r.left+r.width*.30)await goEpubPrev();else if(e.clientX>r.right-r.width*.70)await goEpubNext();}
+      };
+      gestureLayer.addEventListener('pointerdown',onGestureDown,{passive:false});
+      gestureLayer.addEventListener('pointerup',onGestureUp,{passive:false});
+      gestureLayer.addEventListener('dblclick',()=>applyEpubZoom(epubZoomState.scale>1.01?1:2));
+      attachZoomGestures(gestureLayer,{getZoom:()=>epubZoomState.scale,getPan:()=>({x:epubZoomState.panX,y:epubZoomState.panY}),setPan:(x,y)=>{const pan=clampPan(x,y);epubZoomState.panX=pan.x;epubZoomState.panY=pan.y;applyEpubZoom(epubZoomState.scale)},setZoom:(z)=>applyEpubZoom(z),onZoomEnd:()=>{}});
       singleBtn.onclick=async()=>{if(epubDouble){epubDouble=false;await applyEpubSpread()}};
       doubleBtn.onclick=async()=>{if(!epubDouble){epubDouble=true;await applyEpubSpread()}};
+      fontOut.onclick=()=>applyEpubFontSize(epubFontSize-10);
+      fontReset.onclick=()=>applyEpubFontSize(100);
+      fontIn.onclick=()=>applyEpubFontSize(epubFontSize+10);
       document.getElementById('prevPageBtn').onclick=goEpubPrev;
       document.getElementById('nextPageBtn').onclick=goEpubNext;
       updateEpubModeButtons();
       applyEpubZoom(1);
+      await applyEpubFontSize(epubFontSize,false);
       if(epubDouble){try{currentEpubRendition.spread('auto',0)}catch(e){}}
-      currentEpubRendition.on('rendered',()=>{attachEpubInteractions();applyEpubZoom(epubZoomState.scale)});
+      currentEpubRendition.on('rendered',async()=>{applyEpubZoom(epubZoomState.scale);await applyEpubFontSize(epubFontSize,false)});
       currentEpubRendition.on('keyup',e=>{if(e?.key==='ArrowLeft')goEpubPrev();if(e?.key==='ArrowRight')goEpubNext()});
-      attachEpubInteractions();
-      window.addEventListener('resize',()=>{if(!currentEpubRendition)return;try{const r=epubStage.getBoundingClientRect();currentEpubRendition.resize(Math.max(320,Math.floor(r.width)),Math.max(320,Math.floor(r.height)))}catch(e){}} ,{once:false});
+      const onResize=()=>{if(!currentEpubRendition)return;try{const r=epubStage.getBoundingClientRect();currentEpubRendition.resize(Math.max(320,Math.floor(r.width)),Math.max(320,Math.floor(r.height)));applyEpubZoom(epubZoomState.scale)}catch(e){}};
+      window.addEventListener('resize',onResize);
+      stageResizeCleanup=()=>window.removeEventListener('resize',onResize);
+      gestureLayer.focus();
     }catch(e){console.error('EPUB:',e);const detail=esc(e?.message||String(e)||'Error desconocido');document.getElementById('readerBody').innerHTML=`<div class="epub-reader epub-error"><h3>No pude abrir este EPUB</h3><p>El archivo está bien guardado en la biblioteca, pero el lector no pudo interpretar su contenido.</p><p class="book-meta">Detalle técnico: ${detail}</p><button class="secondary" type="button" onclick="closeReader()">Cerrar</button></div>`;}
   }}
 function wait(ms){return new Promise(r=>setTimeout(r,ms))}
@@ -998,6 +1025,16 @@ $("#homeLibraryBtn").onclick=()=>showView("library");
 $("#newCollectionPageBtn").onclick=()=>createCollectionPrompt();
 $("#newCollectionEmptyBtn").onclick=()=>createCollectionPrompt();
 $("#readBook").onclick=async()=>{if(!modalBook)return;const id=modalBook.id;closeBookDetails();await openBook(id,await getAllBooks())};$("#closeReaderBtn").onclick=closeReader;$("#saveProgressBtn").onclick=async()=>{if(!currentBook)return;if(currentEpubRendition){const loc=currentEpubRendition.currentLocation(),cfi=loc?.start?.cfi;if(cfi){currentBook.cfi=cfi;let pct=Number(loc?.start?.percentage);if(!Number.isFinite(pct)){try{pct=Number(currentEpubBook.locations.percentageFromCfi(cfi))}catch(e){}}if(Number.isFinite(pct))currentBook.progress=Math.max(0,Math.min(1,pct));currentBook.updatedAt=Date.now();await putBook(currentBook)}}toast('Posición guardada.')};
+const readerEl=$("#reader");
+const readerFullscreenBtn=$("#readerFullscreenBtn");
+const readerUiBtn=$("#readerUiBtn");
+async function toggleReaderFullscreen(){try{if(document.fullscreenElement||document.webkitFullscreenElement){await (document.exitFullscreen?.()||document.webkitExitFullscreen?.())}else{const el=$("#reader");if(el.requestFullscreen)await el.requestFullscreen();else if(el.webkitRequestFullscreen)await el.webkitRequestFullscreen();else throw new Error("fullscreen")}}catch(e){toast("Pantalla completa no disponible en este navegador.")}}
+function setReaderUiHidden(hidden){readerUiHidden=!!hidden;readerEl.classList.toggle("reader-ui-hidden",readerUiHidden);if(readerUiBtn)readerUiBtn.textContent=readerUiHidden?"Mostrar controles":"Ocultar controles"}
+readerFullscreenBtn?.addEventListener("click",toggleReaderFullscreen);
+readerUiBtn?.addEventListener("click",()=>setReaderUiHidden(!readerUiHidden));
+readerEl?.addEventListener("click",e=>{if(!readerUiHidden)return;if(e.clientY<90)setReaderUiHidden(false)});
+document.addEventListener("fullscreenchange",()=>{if(readerFullscreenBtn)readerFullscreenBtn.textContent=(document.fullscreenElement||document.webkitFullscreenElement)?"⛶ Salir pantalla completa":"⛶ Pantalla completa"});
+
 document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(!$("#bookModal").classList.contains('hidden'))closeBookDetails();else if(!$("#reader").classList.contains('hidden'))closeReader()});
 (async()=>{try{loadCollections();await openDB();const repaired=await repairBookTypes();if(repaired)toast(`Reparé el formato de ${repaired} libro${repaired===1?'':'s'}.`);renderLibrary(await getAllBooks());await autoRefreshSources();setInterval(()=>autoRefreshSources(),5*60*1000)}catch(e){console.error(e);toast('No se pudo iniciar la biblioteca en este navegador.')}})();
 

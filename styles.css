@@ -136,3 +136,16 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
 .epub-reader-stage.zoomed:active{cursor:grabbing}
 .epub-reader iframe{touch-action:none}
 @media(max-width:700px){.reader-head{padding:8px 10px}.reader-actions{gap:5px}.reader-actions .secondary{padding:8px 10px;font-size:12px}.epub-reader-stage{width:100%;height:100%;border-radius:0}.epub-reader{min-height:100%}}
+
+/* v1.5.2.1 — EPUB tablet: controles táctiles, zoom navegable y UI ocultable */
+.reader-head{transition:transform .2s ease,opacity .2s ease}
+.reader.reader-ui-hidden .reader-head{transform:translateY(-110%);opacity:0;pointer-events:none}
+.reader.reader-ui-hidden::after{content:'Toca arriba para mostrar los controles';position:absolute;top:0;left:50%;transform:translateX(-50%);z-index:20;padding:6px 12px;border-radius:0 0 10px 10px;background:rgba(25,24,21,.72);color:#fff;font-size:11px;opacity:.75;pointer-events:none}
+.reader-actions{max-height:220px;overflow:auto}
+.reader-font-label{display:inline-flex;align-items:center;justify-content:center;min-width:44px;padding:0 4px;font-size:11px;color:#bbb4a9}
+.epub-reader-stage{touch-action:none;position:relative}
+.epub-reader-gesture-layer{position:absolute;inset:0;z-index:8;background:transparent;touch-action:none;cursor:default}
+.epub-reader-stage.zoomed .epub-reader-gesture-layer{cursor:grab}
+.epub-reader-stage.zoomed[data-zoom-dragging="1"] .epub-reader-gesture-layer{cursor:grabbing}
+.epub-reader-stage .epub-reader{will-change:transform}
+@media(max-width:700px){.reader-actions{max-width:100%;justify-content:flex-end}.reader-font-label{min-width:38px}.reader.reader-ui-hidden::after{font-size:10px}}
