@@ -1,3 +1,11 @@
+# Corrección v1.5.4 — cargador de fuentes
+
+- El cargador se cierra tanto al terminar la importación/revisión de fuentes como si ocurre un error.
+- Añadidos controles de error al agregar una carpeta, revisar una fuente individual, revisar todas las fuentes y al refresco automático.
+- Se conserva la base v1.5.4; no cambia el almacenamiento de libros ni los lectores.
+
+---
+
 # La Pulenta Biblioteca v1.3 — Fuentes automáticas
 
 Basada en la versión estable v0.9.3. Esta versión añade un lector PDF propio con PDF.js sin cambiar el motor EPUB.

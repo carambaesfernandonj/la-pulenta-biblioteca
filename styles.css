@@ -168,3 +168,11 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
   max-height:none;
   flex:0 0 auto;
 }
+
+.pulenta-loading-overlay{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;background:rgba(0,0,0,.62);backdrop-filter:blur(4px)}
+.pulenta-loading-overlay[hidden]{display:none}
+.pulenta-loading-card{width:min(420px,calc(100vw - 32px));padding:24px;border-radius:18px;background:var(--card,#fff);box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center}
+.pulenta-loading-icon{font-size:34px}.pulenta-loading-title{font-weight:800;font-size:18px;margin-top:8px}.pulenta-loading-detail{margin-top:7px;opacity:.72;min-height:20px}
+.pulenta-loading-track{height:10px;margin-top:18px;border-radius:999px;overflow:hidden;background:rgba(127,127,127,.22)}
+.pulenta-loading-track span{display:block;width:35%;height:100%;border-radius:999px;background:currentColor;transition:width .18s ease}
+.pulenta-loading-percent{margin-top:9px;font-size:13px;opacity:.75}

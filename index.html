@@ -188,5 +188,15 @@
   <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
   <script src="app.js"></script>
+
+<div id="pulentaLoadingOverlay" class="pulenta-loading-overlay" hidden aria-live="polite">
+  <div class="pulenta-loading-card">
+    <div class="pulenta-loading-icon">📚</div>
+    <div id="pulentaLoadingTitle" class="pulenta-loading-title">Preparando libro…</div>
+    <div id="pulentaLoadingDetail" class="pulenta-loading-detail">Un momento…</div>
+    <div class="pulenta-loading-track"><span id="pulentaLoadingBar"></span></div>
+    <div class="pulenta-loading-percent" id="pulentaLoadingPercent">Trabajando…</div>
+  </div>
+</div>
 </body>
 </html>
