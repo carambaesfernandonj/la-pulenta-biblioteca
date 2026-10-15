@@ -74,6 +74,13 @@ async function getBookFile(book,{requestPermission=false}={}){
     if(source){
       try{
         if(requestPermission&&!(await sourcePermission(source.handle,false)))await sourcePermission(source.handle,true);
+        if(!(await sourcePermission(source.handle,false)))throw new Error('La fuente necesita permiso.');
+        // Usar primero el handle directo del archivo, guardado durante el escaneo.
+        // Evita reconstruir una ruta segmento por segmento, que puede fallar en
+        // ciertas carpetas/nombres aunque el archivo exista.
+        if(book.fileHandle&&typeof book.fileHandle.getFile==='function'){
+          try{return await book.fileHandle.getFile()}catch(directError){console.warn('Pulenta: no pude abrir con el handle directo; intentaré la ruta.',directError)}
+        }
         return await getSourceFile(source,book.sourcePath);
       }catch(e){
         if(!(book.file instanceof Blob))throw e;
@@ -159,13 +166,16 @@ async function addBooksFromSourceStreaming(source,total,showProgress=true){
         if(old){
           let changed=false;
           if(!old.sourceId){old.sourceId=source.id;old.sourceName=source.name;old.sourcePath=rel;changed=true}
+          // Los registros antiguos no tenían handle por archivo: guardarlo ahora
+          // permite abrir directamente cada entrada encontrada en esta carpeta.
+          if(!old.fileHandle){old.fileHandle=item.entry;changed=true}
           if(f.lastModified&&old.fileLastModified!==f.lastModified){old.fileLastModified=f.lastModified;old.fileSize=f.size;old.updatedAt=Date.now();changed=true;updated++}
           if(old.file instanceof Blob&&old.sourceId===source.id){delete old.file;old.storageMode='linked';changed=true}
           if(changed)await putBook(old);
           if(old.sourceId===source.id)bySource.set(key,old);
         }else{
           const folders=rel.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))];
-          const book={id:makeId(),title:titleFromFilename(f.name),fileName:f.name,type:bookTypeFromFilename(f.name),source:'local',sourceId:source.id,sourceName:source.name,sourcePath:rel,fileLastModified:f.lastModified||0,fileSize:f.size||0,relativePath:rel,progress:0,cfi:null,tags,collections:[],favorite:false,author:'',language:'',publisher:'',description:'',coverData:null,metadataScanned:false,lastOpenedAt:0,updatedAt:Date.now(),storageMode:'linked'};
+          const book={id:makeId(),title:titleFromFilename(f.name),fileName:f.name,type:bookTypeFromFilename(f.name),source:'local',sourceId:source.id,sourceName:source.name,sourcePath:rel,fileHandle:item.entry,fileLastModified:f.lastModified||0,fileSize:f.size||0,relativePath:rel,progress:0,cfi:null,tags,collections:[],favorite:false,author:'',language:'',publisher:'',description:'',coverData:null,metadataScanned:false,lastOpenedAt:0,updatedAt:Date.now(),storageMode:'linked'};
           await putBook(book);bySource.set(key,book);added++;
         }
       }catch(e){console.warn('No pude vincular archivo de la fuente:',item.rel,e)}
@@ -265,7 +275,7 @@ async function exportLibraryBackup(){
       try{fileBlob=await getBookFile(b)}catch(e){fileBlob=null}
       if(fileBlob) zip.file(path,fileBlob);
       const copy={...b};
-      delete copy.file;
+      delete copy.file;delete copy.fileHandle;
       copy.backupFile=fileBlob?path:null;
       manifest.books.push(copy);
       setLoading(true,'Creando respaldo…',`Preparando: ${b.title||b.fileName||'libro'}`,i+1,books.length);
@@ -337,7 +347,7 @@ async function exportLocationBackup(){
     const manifest={format:'la-pulenta-biblioteca-location-backup',version:1,createdAt:new Date().toISOString(),collections:[...collections],theme:localStorage.getItem('pulenta_theme')||'light',books:[]};
     for(let i=0;i<books.length;i++){
       const b=books[i],copy={...b};
-      delete copy.file;delete copy.backupFile;
+      delete copy.file;delete copy.fileHandle;delete copy.backupFile;
       copy.relativePath=normalizeRelativePath(b.relativePath||b.fileName||'');
       copy.locationOnly=true;
       manifest.books.push(copy);
