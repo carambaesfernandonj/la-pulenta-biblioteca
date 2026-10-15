@@ -208,3 +208,8 @@ main{max-width:1120px;margin:auto;padding:0 20px 60px}.hero{display:grid;grid-te
   .current-reading-shelf .shelf-book .cover .type{font-size:9px}
   .current-reading-shelf .shelf-title{font-size:13px}
 }
+
+
+/* v1.5.4 Offline First — indicador de conectividad */
+.offline-status{position:fixed;right:12px;bottom:12px;z-index:9000;max-width:calc(100vw - 24px);padding:7px 11px;border:1px solid var(--line);border-radius:999px;background:var(--panel,#fff);color:var(--ink,#222);box-shadow:0 5px 18px rgba(0,0,0,.14);font-size:11px;line-height:1.2;opacity:.94;pointer-events:none;transition:opacity .25s ease}
+.offline-status.ready{border-color:#47865d}.offline-status.offline{border-color:#b77b38}

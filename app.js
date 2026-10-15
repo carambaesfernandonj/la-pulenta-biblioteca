@@ -1404,3 +1404,41 @@ document.addEventListener('keydown',async e=>{
   if(e.key==='ArrowRight'||e.key==='PageDown'){e.preventDefault();try{await currentEpubRendition.next()}catch(err){console.warn(err)}}
   if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();try{await currentEpubRendition.prev()}catch(err){console.warn(err)}}
 });
+
+
+// v1.5.4 Offline First — registro del Service Worker y estado real de la caché.
+(()=>{
+  const badge=document.getElementById('offlineStatus');
+  const required=[
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js',
+    'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
+    'https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js'
+  ];
+  let paintToken=0;
+  const paint=async()=>{
+    if(!badge)return;
+    const token=++paintToken;
+    if(!navigator.onLine){
+      badge.textContent='📴 Sin conexión · usando recursos guardados';
+      badge.classList.add('offline');badge.classList.remove('ready');return;
+    }
+    badge.classList.remove('offline');
+    if(!('serviceWorker' in navigator)){badge.textContent='⚠️ Este navegador no permite modo offline';badge.classList.remove('ready');return;}
+    try{
+      const checks=await Promise.all(required.map(async url=>!!(await caches.match(url))));
+      if(token!==paintToken)return;
+      if(navigator.serviceWorker.controller&&checks.every(Boolean)){
+        badge.textContent='📚 Offline preparado · PDF y EPUB';badge.classList.add('ready');
+      }else{
+        const count=checks.filter(Boolean).length;
+        badge.textContent=`☁️ Preparando modo offline… (${count}/${required.length})`;badge.classList.remove('ready');
+      }
+    }catch(e){badge.textContent='☁️ Preparando modo sin conexión…';badge.classList.remove('ready');}
+  };
+  window.addEventListener('online',paint);window.addEventListener('offline',paint);
+  if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+    navigator.serviceWorker.register('./sw.js').then(()=>{paint();navigator.serviceWorker.addEventListener('controllerchange',paint);navigator.serviceWorker.ready.then(paint).catch(()=>{});}).catch(err=>{console.warn('Pulenta offline:',err);if(badge)badge.textContent='⚠️ No se pudo activar el modo offline';});
+  }else if(badge){badge.textContent='ℹ️ Offline requiere HTTPS';}
+  paint();
+})();
