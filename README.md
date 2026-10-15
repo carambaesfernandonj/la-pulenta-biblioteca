@@ -127,3 +127,12 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - La importación desde fuentes registra primero los libros con metadatos mínimos y sin renderizar portadas de todos los PDF/EPUB en lote. Los metadatos y la portada se generan cuando se abre la ficha del libro.
 - El procesamiento cede tiempo al navegador entre registros y cierra el cargador también ante errores.
 - Se evita ejecutar dos revisiones automáticas de fuentes al mismo tiempo.
+
+
+## v1.5.4 — corrección para fuentes grandes
+
+- Las fuentes se recorren de forma incremental: ya no se acumulan todos los objetos `File` en memoria antes de guardar libros.
+- Cada libro se registra en IndexedDB inmediatamente, con pausas breves para que el navegador pueda responder.
+- Las revisiones automáticas se ejecutan sin abrir el panel de carga, evitando que una revisión de fondo bloquee la interfaz al reabrir la app.
+- El chequeo automático periódico se reduce de 5 a 30 minutos para evitar recorridos excesivos en bibliotecas grandes.
+- La versión conserva los datos ya importados; no es necesario borrar la biblioteca ni eliminar la fuente para actualizar.
