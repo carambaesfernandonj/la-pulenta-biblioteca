@@ -121,3 +121,9 @@ Nueva sección de reproducción TTS para EPUB. El audio se genera en tiempo real
 - Zoomed pages can be panned horizontally and vertically.
 - Panning is bounded so the page cannot be lost completely.
 - Existing EPUB tablet changes are preserved.
+
+
+## v1.5.4 — corrección de importación de fuentes grandes
+- La importación desde fuentes registra primero los libros con metadatos mínimos y sin renderizar portadas de todos los PDF/EPUB en lote. Los metadatos y la portada se generan cuando se abre la ficha del libro.
+- El procesamiento cede tiempo al navegador entre registros y cierra el cargador también ante errores.
+- Se evita ejecutar dos revisiones automáticas de fuentes al mismo tiempo.

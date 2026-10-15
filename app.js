@@ -75,7 +75,50 @@ async function linkBookToSource(book,source,relativePath,file){
 async function scanDirectoryHandle(handle,prefix='',map=new Map()){for await(const [name,entry] of handle.entries()){const rel=prefix?`${prefix}/${name}`:name;if(entry.kind==='file'&&/\.(pdf|epub|cbr|cbz)$/i.test(name)){try{map.set(normalizeRelativePath(rel),await entry.getFile())}catch(e){console.warn('No pude leer',rel,e)}}else if(entry.kind==='directory')await scanDirectoryHandle(entry,rel,map)}return map}
 async function scanSourceFiles(source,requestPermission=false){if(!source?.handle)return {status:'missing',map:new Map()};if(!(await sourcePermission(source.handle,requestPermission)))return {status:'permission',map:new Map()};try{return {status:'ok',map:await scanDirectoryHandle(source.handle)}}catch(e){console.warn('Pulenta source scan:',e);return {status:'error',map:new Map()}}}
 function sourceBookKey(sourceId,relativePath){return `${sourceId}::${normalizeRelativePath(relativePath)}`}
-async function addBooksFromSource(source,files){const existing=await getAllBooks();const bySource=new Map(existing.filter(b=>b.sourceId===source.id&&b.sourcePath).map(b=>[sourceBookKey(source.id,b.sourcePath),b]));const byRelative=new Map(existing.filter(b=>!b.sourceId&&b.relativePath).map(b=>[normalizeRelativePath(b.relativePath),b]));let added=0,updated=0;const entries=[...files.entries()];setLoading(true,'Revisando fuente…',`Buscando libros en ${source.name}`,0,Math.max(1,entries.length));for(let i=0;i<entries.length;i++){const [rel,f]=entries[i];const key=sourceBookKey(source.id,rel);const old=bySource.get(key)||byRelative.get(normalizeRelativePath(rel));if(old){let changed=false;if(!old.sourceId){old.sourceId=source.id;old.sourceName=source.name;old.sourcePath=normalizeRelativePath(rel);changed=true}if(f.lastModified&&old.fileLastModified!==f.lastModified){old.fileLastModified=f.lastModified;old.fileSize=f.size;old.updatedAt=Date.now();changed=true;updated++}if(old.file instanceof Blob&&old.sourceId===source.id){delete old.file;old.storageMode='linked';changed=true}if(changed)await putBook(old)}else{try{let coverData=null,meta={};const lower=f.name.toLowerCase();if(lower.endsWith('.pdf')){coverData=await generatePdfCover(f);meta=await extractPdfMetadata(f)}else if(lower.endsWith('.epub')){meta=await extractEpubMetadata(f);coverData=meta.coverData||null}else{coverData=await generateComicCover(f);meta={title:titleFromFilename(f.name)}}const folders=rel.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))];const book={id:makeId(),title:meta.title||titleFromFilename(f.name),fileName:f.name,type:bookTypeFromFilename(f.name),source:'local',sourceId:source.id,sourceName:source.name,sourcePath:normalizeRelativePath(rel),fileLastModified:f.lastModified||0,fileSize:f.size||0,relativePath:normalizeRelativePath(rel),progress:0,cfi:null,tags,collections:[],favorite:false,author:meta.author||'',language:meta.language||'',publisher:meta.publisher||'',description:meta.description||'',coverData,metadataScanned:true,lastOpenedAt:0,updatedAt:Date.now(),storageMode:'linked'};await putBook(book);added++}catch(e){console.warn('Pulenta source add:',rel,e)}}setLoading(true,'Revisando fuente…',`Procesando: ${f.name}`,i+1,entries.length);await wait(0)}source.lastScanAt=Date.now();source.lastFoundCount=entries.length;await putSource(source);return {added,updated,total:entries.length}}
+async function addBooksFromSource(source,files){
+  const existing=await getAllBooks();
+  const bySource=new Map(existing.filter(b=>b.sourceId===source.id&&b.sourcePath).map(b=>[sourceBookKey(source.id,b.sourcePath),b]));
+  const byRelative=new Map(existing.filter(b=>!b.sourceId&&b.relativePath).map(b=>[normalizeRelativePath(b.relativePath),b]));
+  let added=0,updated=0;
+  const entries=[...files.entries()];
+  // Importación ligera: primero registrar los libros y persistirlos; no generar
+  // 182 portadas/metadatos pesados de golpe, que puede cerrar la pestaña en tablet.
+  const work=entries.filter(([rel,f])=>{
+    const old=bySource.get(sourceBookKey(source.id,rel))||byRelative.get(normalizeRelativePath(rel));
+    return !old || (!old.sourceId) || (f.lastModified && old.fileLastModified!==f.lastModified) || (old.file instanceof Blob);
+  });
+  const workPaths=new Set(work.map(([rel])=>normalizeRelativePath(rel)));
+  const showProgress=work.length>0;
+  if(showProgress)setLoading(true,'Añadiendo libros a la biblioteca…',`Preparando ${work.length} archivos de ${source.name}`,0,work.length);
+  let done=0;
+  try{
+    for(const [rel,f] of entries){
+      const key=sourceBookKey(source.id,rel);
+      const old=bySource.get(key)||byRelative.get(normalizeRelativePath(rel));
+      if(old){
+        let changed=false;
+        if(!old.sourceId){old.sourceId=source.id;old.sourceName=source.name;old.sourcePath=normalizeRelativePath(rel);changed=true}
+        if(f.lastModified&&old.fileLastModified!==f.lastModified){old.fileLastModified=f.lastModified;old.fileSize=f.size;old.updatedAt=Date.now();changed=true;updated++}
+        if(old.file instanceof Blob&&old.sourceId===source.id){delete old.file;old.storageMode='linked';changed=true}
+        if(changed)await putBook(old);
+      }else{
+        // Los metadatos y las portadas se obtienen al abrir la ficha del libro.
+        // Así se evita mantener muchas páginas PDF/EPUB renderizadas en memoria.
+        const folders=rel.split('/').slice(0,-1),tags=[...new Set(folders.map(normTag).filter(Boolean))];
+        const book={id:makeId(),title:titleFromFilename(f.name),fileName:f.name,type:bookTypeFromFilename(f.name),source:'local',sourceId:source.id,sourceName:source.name,sourcePath:normalizeRelativePath(rel),fileLastModified:f.lastModified||0,fileSize:f.size||0,relativePath:normalizeRelativePath(rel),progress:0,cfi:null,tags,collections:[],favorite:false,author:'',language:'',publisher:'',description:'',coverData:null,metadataScanned:false,lastOpenedAt:0,updatedAt:Date.now(),storageMode:'linked'};
+        await putBook(book);bySource.set(key,book);added++;
+      }
+      if(showProgress&&workPaths.has(normalizeRelativePath(rel))){done++;setLoading(true,'Añadiendo libros a la biblioteca…',`Vinculando: ${f.name}`,done,work.length);}
+      // Dejar respirar al navegador entre registros, especialmente en tablets.
+      if(done>0&&done%3===0)await wait(20);
+    }
+    source.lastScanAt=Date.now();source.lastFoundCount=entries.length;await putSource(source);
+    return {added,updated,total:entries.length};
+  } finally {
+    if(showProgress)setLoading(false);
+    pulentaHideLoading();
+  }
+}
 async function refreshSource(source,requestPermission=false){const result=await scanSourceFiles(source,requestPermission);if(result.status!=='ok')return result;return {status:'ok',...(await addBooksFromSource(source,result.map))}}
 async function refreshAllSources(auto=true){const sources=await getAllSources();let added=0,updated=0,scanned=0,needsPermission=0;for(const source of sources){const result=await refreshSource(source,!auto);if(result.status==='permission')needsPermission++;else if(result.status==='ok'){added+=result.added||0;updated+=result.updated||0;scanned++}}return {sources,added,updated,scanned,needsPermission}}
 async function renderSources(){
@@ -112,11 +155,13 @@ async function addSource(){
   }catch(e){if(e?.name!=='AbortError'){console.error('Pulenta add source:',e);toast(`No pude añadir la fuente: ${e.message||'error'}`)}}
   finally{setLoading(false);pulentaHideLoading()}
 }
+let sourceRefreshInProgress=false;
 async function autoRefreshSources(){
-  if(!sourceSupported())return;
+  if(!sourceSupported()||sourceRefreshInProgress)return;
+  sourceRefreshInProgress=true;
   try{const r=await refreshAllSources(true);if(r.added||r.updated){renderLibrary(await getAllBooks());toast(`Fuentes revisadas · ${r.added} libro${r.added===1?'':'s'} nuevo${r.added===1?'':'s'}.`)}await renderSources();}
   catch(e){console.warn('Pulenta auto-refresh sources:',e)}
-  finally{setLoading(false);pulentaHideLoading()}
+  finally{sourceRefreshInProgress=false;setLoading(false);pulentaHideLoading()}
 }
 function tx(m="readonly"){return db.transaction(STORE,m).objectStore(STORE)}
 function getAllBooks(){return new Promise((res,rej)=>{const r=tx().getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
