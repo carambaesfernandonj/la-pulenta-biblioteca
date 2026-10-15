@@ -451,7 +451,18 @@ async function extractEpubMetadata(file){
       const base=rootfile.includes('/')?rootfile.slice(0,rootfile.lastIndexOf('/')+1):'';
       const normalized=new URL(coverHref, 'https://pulenta.local/'+base).pathname.replace(/^\//,'');
       const img=zip.file(normalized)||zip.file(base+coverHref);
-      if(img){const bytes=await img.async('uint8array');const mime=/\.png$/i.test(normalized)?'image/png':/\.webp$/i.test(normalized)?'image/webp':'image/jpeg';let binary='';const chunk=0x8000;for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.subarray(i,i+chunk));meta.coverData=`data:${mime};base64,${btoa(binary)}`}
+      if(img){
+        const bytes=await img.async('uint8array');
+        const mime=/\.png$/i.test(normalized)?'image/png':/\.webp$/i.test(normalized)?'image/webp':/\.gif$/i.test(normalized)?'image/gif':'image/jpeg';
+        const blob=new Blob([bytes],{type:mime});const url=URL.createObjectURL(blob);
+        try{
+          const image=await new Promise((resolve,reject)=>{const el=new Image();el.onload=()=>resolve(el);el.onerror=reject;el.src=url});
+          const scale=Math.min(1,360/Math.max(1,image.naturalWidth),520/Math.max(1,image.naturalHeight));
+          const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+          canvas.getContext('2d',{alpha:false}).drawImage(image,0,0,canvas.width,canvas.height);
+          meta.coverData=canvas.toDataURL('image/jpeg',.68);canvas.width=1;canvas.height=1;
+        }finally{URL.revokeObjectURL(url)}
+      }
     }
     return meta;
   }catch(e){console.warn('Metadata EPUB:',e);return {}}
@@ -460,7 +471,33 @@ async function extractPdfMetadata(file){
   if(!file||!window.pdfjsLib)return {};
   try{const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const m=await pdf.getMetadata();const info=m?.info||{};return {title:info.Title||'',author:info.Author||'',language:info.Language||'',publisher:info.Producer||'',description:info.Subject||''}}catch(e){return {}}
 }
-async function generatePdfCover(file){if(!window.pdfjsLib||!file)return null;try{const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const p=await pdf.getPage(1),base=p.getViewport({scale:1}),vp=p.getViewport({scale:520/base.height}),c=document.createElement('canvas');c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);await p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;return c.toDataURL('image/jpeg',.78)}catch(e){console.warn(e);return null}}
+async function generatePdfCover(file){
+  if(!window.pdfjsLib||!file)return null;
+  let pdf=null,page=null,renderTask=null,canvas=null;
+  try{
+    // Portada de baja resolución desde el inicio: evita crear un canvas enorme
+    // y luego volver a copiarlo a otro canvas, algo que puede agotar la RAM móvil.
+    const data=await file.arrayBuffer();
+    pdf=await window.pdfjsLib.getDocument({data, useSystemFonts:true, isEvalSupported:false}).promise;
+    page=await pdf.getPage(1);
+    const base=page.getViewport({scale:1});
+    const scale=Math.min(1,360/Math.max(1,base.width),520/Math.max(1,base.height));
+    const vp=page.getViewport({scale});
+    canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.ceil(vp.width));canvas.height=Math.max(1,Math.ceil(vp.height));
+    const ctx=canvas.getContext('2d',{alpha:false});
+    renderTask=page.render({canvasContext:ctx,viewport:vp});
+    await renderTask.promise;
+    return canvas.toDataURL('image/jpeg',.68);
+  }catch(e){console.warn('Pulenta: no pude generar portada PDF',e);return null}
+  finally{
+    try{renderTask?.cancel?.()}catch(e){}
+    try{page?.cleanup?.()}catch(e){}
+    try{canvas?.getContext('2d')?.clearRect(0,0,canvas.width,canvas.height)}catch(e){}
+    if(canvas){canvas.width=1;canvas.height=1;canvas=null}
+    try{await pdf?.destroy?.()}catch(e){}
+  }
+}
 async function compactCoverData(dataUrl,maxWidth=360,maxHeight=520,quality=.72){
   if(!dataUrl||!/^data:image\//i.test(dataUrl))return null;
   try{
@@ -492,7 +529,12 @@ async function findMissingCovers(){
         if(type==='pdf')cover=await generatePdfCover(file);
         else if(type==='epub'){meta=await extractEpubMetadata(file);cover=meta.coverData||null}
         else if(type==='cbz'||type==='cbr')cover=await generateComicCover(file);
-        if(cover){b.coverData=await compactCoverData(cover);if(b.coverData)found++}
+        if(cover){
+          // PDF/EPUB/cómics ya generan portadas limitadas a 360×520 px.
+          // Evita decodificarlas y copiarlas otra vez, reduciendo picos de RAM.
+          b.coverData=cover;
+          if(b.coverData)found++;
+        }
         if(meta.title&&!b.title)b.title=meta.title;
         if(meta.author&&!b.author)b.author=meta.author;
         if(meta.language&&!b.language)b.language=meta.language;
@@ -504,8 +546,9 @@ async function findMissingCovers(){
       }catch(e){failed++;console.warn('Pulenta: fallo al buscar portada de',b.title||b.fileName,e)}
       done++;
       setLoading(true,'Encontrando portadas…',`${done} de ${candidates.length} · ${found} encontradas`,done,candidates.length);
-      // Permite repintar la barra y evita retener demasiados recursos entre libros.
-      await wait(30);
+      // Cede tiempo al navegador entre libros; cada cinco portadas hace una
+      // pausa más larga para que la tablet pueda liberar recursos gráficos.
+      if(done%5===0)await wait(350);else await wait(100);
     }
   }catch(e){console.error('Pulenta: búsqueda de portadas',e);toast('Hubo un problema durante la búsqueda de portadas. Los cambios guardados se conservan.')}
   finally{
@@ -1101,7 +1144,32 @@ async function comicGetEntries(file){
   out.sort((a,b)=>comicNatural(a.name,b.name));
   return out;
 }
-async function generateComicCover(file){try{const entries=await comicGetEntries(file);const first=entries[0];if(!first)return null;const blob=new Blob([first.data],{type:comicMime(first.name)});const url=URL.createObjectURL(blob);try{const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url});const maxH=900,maxW=620,scale=Math.min(1,maxW/img.naturalWidth,maxH/img.naturalHeight),c=document.createElement('canvas');c.width=Math.max(1,Math.round(img.naturalWidth*scale));c.height=Math.max(1,Math.round(img.naturalHeight*scale));c.getContext('2d').drawImage(img,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.82)}finally{URL.revokeObjectURL(url)}}catch(e){console.warn('Pulenta comic cover:',e);return null}}
+async function generateComicCover(file){
+  let canvas=null,url=null,zip=null,bytes=null;
+  try{
+    const name=String(file?.name||'').toLowerCase();
+    if(name.endsWith('.cbz')){
+      // Para la portada CBZ solo descomprime la primera imagen, no todas las
+      // páginas del cómic. Cargar el archivo entero aquí puede tumbar tablets.
+      if(typeof JSZip==='undefined')return null;
+      zip=await JSZip.loadAsync(file);
+      const names=Object.keys(zip.files).filter(n=>!zip.files[n].dir&&comicImageName(n)).sort(comicNatural);
+      if(!names.length)return null;
+      bytes=await zip.files[names[0]].async('uint8array');
+      const blob=new Blob([bytes],{type:comicMime(names[0])});url=URL.createObjectURL(blob);
+    }else{
+      // El lector CBR usa un motor WASM con limitaciones conocidas. No intentamos
+      // extraer todas sus páginas solo para fabricar una portada.
+      console.warn('Pulenta: la generación automática de portadas CBR sigue pendiente.');return null;
+    }
+    const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url});
+    const scale=Math.min(1,360/Math.max(1,img.naturalWidth),520/Math.max(1,img.naturalHeight));
+    canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+    canvas.getContext('2d',{alpha:false}).drawImage(img,0,0,canvas.width,canvas.height);
+    return canvas.toDataURL('image/jpeg',.68);
+  }catch(e){console.warn('Pulenta comic cover:',e);return null}
+  finally{if(url)URL.revokeObjectURL(url);if(canvas){canvas.width=1;canvas.height=1}bytes=null;zip=null}
+}
 async function openComicReader(b){
   comicState={pages:[],page:Math.max(1,Number(b.comicPage)||1),double:!!b.comicDouble,rtl:!!b.comicRtl,urls:[],renderToken:0,swipeX:0,swipeY:0,zoom:1,panX:0,panY:0};
   const stage=document.createElement('div');stage.className='comic-stage';stage.tabIndex=0;
