@@ -5,6 +5,8 @@ const SOURCE_STORE = "sources";
 let db, currentBook=null, currentObjectUrl=null, currentEpubBook=null, currentEpubRendition=null, currentEpubUrl=null;
 let activeTag=null, activeCollection=null, activeFilter="all", sortMode="updated", viewMode="grid", modalBook=null, modalTags=[], currentView="home";
 let readerUiHidden=false;
+let coverScanCancelRequested=false;
+let coverScanRunning=false;
 let stageResizeCleanup=null;
 let collections=[];
 
@@ -459,6 +461,63 @@ async function extractPdfMetadata(file){
   try{const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const m=await pdf.getMetadata();const info=m?.info||{};return {title:info.Title||'',author:info.Author||'',language:info.Language||'',publisher:info.Producer||'',description:info.Subject||''}}catch(e){return {}}
 }
 async function generatePdfCover(file){if(!window.pdfjsLib||!file)return null;try{const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;const p=await pdf.getPage(1),base=p.getViewport({scale:1}),vp=p.getViewport({scale:520/base.height}),c=document.createElement('canvas');c.width=Math.ceil(vp.width);c.height=Math.ceil(vp.height);await p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;return c.toDataURL('image/jpeg',.78)}catch(e){console.warn(e);return null}}
+async function compactCoverData(dataUrl,maxWidth=360,maxHeight=520,quality=.72){
+  if(!dataUrl||!/^data:image\//i.test(dataUrl))return null;
+  try{
+    const img=await new Promise((resolve,reject)=>{const image=new Image();image.onload=()=>resolve(image);image.onerror=reject;image.src=dataUrl});
+    const scale=Math.min(1,maxWidth/img.naturalWidth,maxHeight/img.naturalHeight);
+    const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+    canvas.getContext('2d',{alpha:false}).drawImage(img,0,0,canvas.width,canvas.height);
+    return canvas.toDataURL('image/jpeg',quality);
+  }catch(e){console.warn('Pulenta: no pude optimizar una portada',e);return dataUrl}
+}
+async function findMissingCovers(){
+  if(coverScanRunning)return;
+  const all=await getAllBooks();
+  const candidates=all.filter(b=>!b.coverData&&['pdf','epub','cbz','cbr'].includes(String(b.type||'').toLowerCase()));
+  if(!candidates.length){toast('¡Tu biblioteca ya no tiene portadas pendientes!');return}
+  if(!confirm(`Voy a buscar o generar portadas para ${candidates.length} libros que todavía no tienen.\n\nSe procesarán de a uno y cada resultado se guardará al terminar. Puedes cancelar y continuar más tarde.\n\n¿Partimos?`))return;
+  coverScanRunning=true;coverScanCancelRequested=false;
+  const cancelBtn=$('#loadingCancelBtn');if(cancelBtn){cancelBtn.classList.remove('hidden');cancelBtn.textContent='Cancelar proceso'}
+  let done=0,found=0,failed=0;
+  try{
+    setLoading(true,'Encontrando portadas…','Preparando biblioteca',0,candidates.length);
+    for(const b of candidates){
+      if(coverScanCancelRequested)break;
+      setLoading(true,'Encontrando portadas…',`${done+1} de ${candidates.length}: ${b.title||b.fileName}`,done,candidates.length);
+      try{
+        const file=await getBookFile(b);
+        let cover=null,meta={};
+        const type=String(b.type||bookTypeFromFilename(b.fileName||b.sourcePath||'')).toLowerCase();
+        if(type==='pdf')cover=await generatePdfCover(file);
+        else if(type==='epub'){meta=await extractEpubMetadata(file);cover=meta.coverData||null}
+        else if(type==='cbz'||type==='cbr')cover=await generateComicCover(file);
+        if(cover){b.coverData=await compactCoverData(cover);if(b.coverData)found++}
+        if(meta.title&&!b.title)b.title=meta.title;
+        if(meta.author&&!b.author)b.author=meta.author;
+        if(meta.language&&!b.language)b.language=meta.language;
+        if(meta.publisher&&!b.publisher)b.publisher=meta.publisher;
+        if(meta.description&&!b.description)b.description=meta.description;
+        if(type==='pdf'||type==='epub')b.metadataScanned=true;
+        b.coverScanAt=Date.now();b.updatedAt=Date.now();
+        await putBook(b);
+      }catch(e){failed++;console.warn('Pulenta: fallo al buscar portada de',b.title||b.fileName,e)}
+      done++;
+      setLoading(true,'Encontrando portadas…',`${done} de ${candidates.length} · ${found} encontradas`,done,candidates.length);
+      // Permite repintar la barra y evita retener demasiados recursos entre libros.
+      await wait(30);
+    }
+  }catch(e){console.error('Pulenta: búsqueda de portadas',e);toast('Hubo un problema durante la búsqueda de portadas. Los cambios guardados se conservan.')}
+  finally{
+    coverScanRunning=false;coverScanCancelRequested=false;
+    if(cancelBtn){cancelBtn.classList.add('hidden');cancelBtn.disabled=false;cancelBtn.textContent='Cancelar proceso'}
+    setLoading(false);pulentaHideLoading();
+    renderLibrary(await getAllBooks());
+    const cancelled=done<candidates.length;
+    toast(cancelled?`Proceso detenido · ${found} portadas encontradas. Puedes continuar después.`:`Listo · ${found} portadas encontradas${failed?` · ${failed} archivos con problemas`:''}.`);
+  }
+}
+
 function coverFor(b,large=false){const type=(b.type||'pdf').toUpperCase(), pct=Math.round((b.progress||0)*100);if(b.coverData)return `<div class="cover ${large?'large':''}"><img src="${b.coverData}" alt=""><span class="type">${type}</span></div>`;return `<div class="cover ${large?'large':''}"><div class="type">${type}</div><div class="cover-title">${esc(b.title)}</div><div class="source">${pct?pct+'% leído':'Sin empezar'}</div></div>`}
 function sorted(list){return [...list].sort((a,b)=>{if(sortMode==='title')return (a.title||'').localeCompare(b.title||'','es',{sensitivity:'base'});if(sortMode==='author')return (a.author||'Sin autor').localeCompare(b.author||'Sin autor','es',{sensitivity:'base'});if(sortMode==='progress')return (b.progress||0)-(a.progress||0);return (b.updatedAt||0)-(a.updatedAt||0)})}
 function filtered(all){const q=$("#searchInput").value.trim().toLowerCase();return sorted(all.filter(b=>{const hay=[b.title,b.author,b.fileName,...(b.tags||[])].join(' ').toLowerCase();const mq=!q||hay.includes(q);const mf=activeFilter==='all'||(activeFilter==='favorites'&&b.favorite)||(activeFilter==='pdf'&&b.type==='pdf')||(activeFilter==='epub'&&b.type==='epub')||(activeFilter==='cbz'&&b.type==='cbz')||(activeFilter==='cbr'&&b.type==='cbr');const mt=!activeTag||(b.tags||[]).includes(activeTag);const mc=!activeCollection||(b.collections||[]).includes(activeCollection);return mq&&mf&&mt&&mc}))}
@@ -1168,6 +1227,8 @@ $("#addBtn").onclick=()=>$("#addMenu").classList.toggle('hidden');$("#addFilesBt
 document.addEventListener('click',e=>{if(!e.target.closest('.add-wrap'))$("#addMenu").classList.add('hidden')});
 $("#showTagsBtn").onclick=async()=>{const b=$("#tagBar");if(b.classList.contains('hidden'))renderTagBar(await getAllBooks());else{activeTag=null;renderLibrary(await getAllBooks())}};
 $("#sortSelect").onchange=async e=>{sortMode=e.target.value;renderLibrary(await getAllBooks())};
+$('#findCoversBtn')?.addEventListener('click',findMissingCovers);
+$('#loadingCancelBtn')?.addEventListener('click',()=>{if(coverScanRunning){coverScanCancelRequested=true;$('#loadingCancelBtn').textContent='Cancelando…';$('#loadingCancelBtn').disabled=true}});
 $("#searchInput").oninput=async()=>renderLibrary(await getAllBooks());
 $("#filterPills").querySelectorAll('.filter-pill').forEach(b=>b.onclick=async()=>{activeFilter=b.dataset.filter;$("#filterPills").querySelectorAll('.filter-pill').forEach(x=>x.classList.toggle('active',x===b));renderLibrary(await getAllBooks())});
 $("#gridViewBtn").onclick=()=>{viewMode='grid';$("#gridViewBtn").classList.add('active');$("#listViewBtn").classList.remove('active');renderLibrary(lastBooks)};

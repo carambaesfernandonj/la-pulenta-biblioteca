@@ -1,3 +1,18 @@
+# La Pulenta Biblioteca v1.5.4 — Encontrar portadas
+
+## Nueva función: Encontrar portadas
+- Añade el botón **🖼️ Encontrar portadas** en la biblioteca.
+- Busca portadas faltantes en PDF (renderiza la primera página), EPUB (extrae la portada incorporada) y cómics CBZ/CBR (intenta extraer la primera imagen).
+- Procesa un libro a la vez y guarda cada resultado inmediatamente, para que una interrupción no pierda el trabajo ya realizado.
+- Optimiza las imágenes de portada para reducir el espacio de almacenamiento.
+- Permite cancelar el proceso y continuar más tarde: los libros que ya tienen portada se omiten en la siguiente ejecución.
+- Los archivos que no tengan una portada incorporada o que no puedan leerse se dejan sin portada; el proceso continúa con el siguiente libro.
+
+## Instalación
+Reemplaza los archivos de la carpeta `pulenta_v1_1` en tu repositorio de GitHub Pages. No necesitas volver a importar los libros. Abre la app con conexión, entra en la biblioteca y pulsa **Encontrar portadas**.
+
+---
+
 # La Pulenta Biblioteca v1.5.4 — corrección de apertura de libros en fuentes
 
 ## Corrección incluida
