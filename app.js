@@ -48,7 +48,23 @@ async function getSourceFile(source,relativePath){
   if(!(await sourcePermission(source.handle,false)))throw new Error('La fuente necesita permiso.');
   let handle=source.handle;
   const parts=String(relativePath).replace(/\\/g,'/').split('/').filter(Boolean);
-  for(const part of parts){handle=await handle.getFileHandle(part);}
+  if(!parts.length)throw new Error('La ruta del libro está vacía.');
+  // sourcePath se normaliza para comparar rutas; por eso buscamos cada entrada
+  // sin distinguir mayúsculas y respetando su tipo (carpeta o archivo).
+  for(let i=0;i<parts.length;i++){
+    const part=parts[i],isLast=i===parts.length-1,expectedKind=isLast?'file':'directory';
+    let actualName=null,actualKind=null;
+    for await(const [name,entry] of handle.entries()){
+      if(name.toLocaleLowerCase()===part.toLocaleLowerCase()){
+        actualName=name;actualKind=entry.kind;break;
+      }
+    }
+    if(actualName===null)throw new Error(`No encontré “${part}” dentro de la fuente.`);
+    if(actualKind!==expectedKind){
+      throw new Error(isLast?`“${actualName}” es una carpeta y no un archivo.`:`“${actualName}” no es una carpeta.`);
+    }
+    handle=isLast?await handle.getFileHandle(actualName):await handle.getDirectoryHandle(actualName);
+  }
   return await handle.getFile();
 }
 async function getBookFile(book,{requestPermission=false}={}){

@@ -1,3 +1,17 @@
+# La Pulenta Biblioteca v1.5.4 — corrección de apertura de libros en fuentes
+
+## Corrección incluida
+- Corrige la resolución de rutas al abrir libros vinculados a una fuente.
+- Recorre las carpetas intermedias como directorios y solo trata el último elemento como archivo.
+- Tolera diferencias de mayúsculas/minúsculas en nombres de carpetas y archivos, porque las rutas se normalizan para comparar registros.
+- No elimina ni vuelve a importar los libros existentes.
+- Mantiene el sistema de importación incremental de fuentes grandes de la revisión anterior.
+
+## Instalación
+Reemplaza los archivos de la carpeta `pulenta_v1_1` en tu repositorio de GitHub Pages. Después abre la app con conexión y prueba abrir un PDF y un EPUB que provengan de la fuente.
+
+---
+
 # Corrección v1.5.4 — cargador de fuentes
 
 - El cargador se cierra tanto al terminar la importación/revisión de fuentes como si ocurre un error.
